@@ -90,6 +90,10 @@ def parse_message_content(raw, strip_question_marks=False):
     except (json.JSONDecodeError, TypeError):
         return "", ""
 
+    # 防御：JSON 解出来不是 dict（list/str/number 都见过）—— 当空返回
+    if not isinstance(data, dict):
+        return "", ""
+
     # 标题：title 字段 → forms 兜底 → attachments.name 兜底
     title = data.get("title")
     if not title:
@@ -99,8 +103,9 @@ def parse_message_content(raw, strip_question_marks=False):
         if isinstance(attachments, list) and len(attachments) > 0:
             title = attachments[0].get("name", "")
 
-    # 正文：text 字段 → forms 兜底
-    text = data.get("text")
+    # 正文：text 字段 OR content 字段 → forms 兜底
+    # 兼容钉钉/企微/短信 webhook——多种 payload schema 里正文可能是 text 或 content
+    text = data.get("text") or data.get("content")
     if not text:
         text = _extract_text_from_forms(data.get("forms"))
 

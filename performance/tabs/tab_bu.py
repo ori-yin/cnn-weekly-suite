@@ -10,6 +10,41 @@ from performance.components import section_header
 from performance.tabs.tab_plan import parse_message_content
 
 
+# Plan 计划类型 → 显示文案（中文简写）
+_PT_DISPLAY = {
+    "AARRPlan": "AARR",
+    "常规Plan": "常规",
+    "On-demand": "按需",
+    "Responsive": "响应",
+}
+
+
+def _format_plan_type(values) -> str:
+    """聚合列的去重取值，转中文短名后用 / 分隔。空 = 破折号。"""
+    seen = []
+    for v in values:
+        if pd.isna(v) or v == "":
+            continue
+        s = str(v)
+        if s not in seen:
+            seen.append(s)
+    if not seen:
+        return "—"
+    return " / ".join(_PT_DISPLAY.get(s, s) for s in seen)
+
+
+def _format_channels(values) -> str:
+    """聚合列的渠道去重，用 · 分隔；保留原始渠道名（已短）。空 = 破折号。"""
+    seen = []
+    for v in values:
+        if pd.isna(v) or v == "":
+            continue
+        s = str(v)
+        if s not in seen:
+            seen.append(s)
+    return " · ".join(seen) if seen else "—"
+
+
 def _compute_bu_metrics(df: pd.DataFrame) -> dict:
     """计算 BU 的核心指标"""
     return {
@@ -333,7 +368,8 @@ def render(df: pd.DataFrame, prior_df: pd.DataFrame | None = None, bu_summary: d
 # ─── BU 发送明细（嵌进 BU 表每行，作为 <details> 展开子表）────
 
 def _aggregate_bu_plans(bu_df: pd.DataFrame) -> list:
-    """单个 BU 的 df 按 Plan ID 聚合，1 Plan 1 行，按 CTR 降序。"""
+    """单个 BU 的 df 按 Plan ID 聚合，1 Plan 1 行，按 CTR 降序。
+    计划类型 / 渠道多值时拼接为单一展示串（_format_*）。"""
     if bu_df is None or bu_df.empty:
         return []
     agg_dict = {
@@ -343,9 +379,12 @@ def _aggregate_bu_plans(bu_df: pd.DataFrame) -> list:
         "触达成功": "sum",
         "点击人次": "sum",
         "订单GC": "sum",
+        "计划类型": lambda s: _format_plan_type(s.tolist()),
     }
     if "订单Sales" in bu_df.columns:
         agg_dict["订单Sales"] = "sum"
+    if "渠道" in bu_df.columns:
+        agg_dict["渠道"] = lambda s: _format_channels(s.tolist())
     plan_agg = bu_df.groupby("Plan ID").agg(agg_dict).reset_index()
     parsed = plan_agg["消息内容"].apply(parse_message_content)
     plan_agg["消息标题"] = parsed.apply(lambda x: x[0])
@@ -358,28 +397,35 @@ def _aggregate_bu_plans(bu_df: pd.DataFrame) -> list:
 
 
 def _render_plan_rows_html(plan_rows: list) -> str:
-    """单 BU 的 Plan 明细子表 HTML（嵌进 <details> 内，5 列 + 表头）。"""
+    """单 BU 的 Plan 明细子表 HTML（嵌进浮层）。7 列 + 表头：标题 / 计划类型 / 渠道 / 正文 / 触达 / 点击 / CTR。
+    标题与正文完整展示，不截断。"""
     if not plan_rows:
         return '<div style="padding:10px 16px;color:#999;font-size:12px;">本周无发送</div>'
     rows_html = ""
     for row in plan_rows:
-        title = str(row.get("消息标题", "—"))[:50]
-        text = str(row.get("消息内容", "—"))[:80]
-        reach = int(row.get("触达成功", 0))
-        clicks = int(row.get("点击人次", 0))
-        ctr = row.get("CTR", 0)
+        title = str(row.get("消息标题") or "—")
+        text = str(row.get("消息内容") or "—")
+        plan_type = str(row.get("计划类型") or "—")
+        channel = str(row.get("渠道") or "—")
+        reach = int(row.get("触达成功", 0) or 0)
+        clicks = int(row.get("点击人次", 0) or 0)
+        ctr = row.get("CTR", 0) or 0
         rows_html += (
             f'<tr>'
-            f'<td style="padding:6px 8px;border-bottom:1px solid {THEME_LINE};font-weight:600;">{title}</td>'
-            f'<td style="padding:6px 8px;border-bottom:1px solid {THEME_LINE};color:{THEME_INK2};">{text}</td>'
+            f'<td style="padding:6px 8px;border-bottom:1px solid {THEME_LINE};color:{THEME_INK2};white-space:nowrap;">{channel}</td>'
+            f'<td style="padding:6px 8px;border-bottom:1px solid {THEME_LINE};color:{THEME_INK2};white-space:nowrap;">{plan_type}</td>'
+            f'<td style="padding:6px 8px;border-bottom:1px solid {THEME_LINE};font-weight:600;word-break:break-word;white-space:pre-wrap;">{title}</td>'
+            f'<td style="padding:6px 8px;border-bottom:1px solid {THEME_LINE};color:{THEME_INK2};word-break:break-word;white-space:pre-wrap;">{text}</td>'
             f'<td style="padding:6px 8px;border-bottom:1px solid {THEME_LINE};text-align:right;">{reach:,}</td>'
             f'<td style="padding:6px 8px;border-bottom:1px solid {THEME_LINE};text-align:right;">{clicks:,}</td>'
             f'<td style="padding:6px 8px;border-bottom:1px solid {THEME_LINE};text-align:right;font-weight:700;">{ctr:.2f}%</td>'
             f'</tr>'
         )
     return (
-        f'<table class="bu-plan-table" style="width:100%;margin:8px 0 4px;font-size:12px;border-collapse:collapse;">'
+        f'<table class="bu-plan-table" style="width:100%;margin:8px 0 4px;font-size:12px;border-collapse:collapse;table-layout:auto;">'
         f'<thead><tr style="background:#F5F5F5;">'
+        f'<th style="text-align:left;padding:6px 8px;border-bottom:1px solid {THEME_LINE};">渠道</th>'
+        f'<th style="text-align:left;padding:6px 8px;border-bottom:1px solid {THEME_LINE};">计划类型</th>'
         f'<th style="text-align:left;padding:6px 8px;border-bottom:1px solid {THEME_LINE};">标题</th>'
         f'<th style="text-align:left;padding:6px 8px;border-bottom:1px solid {THEME_LINE};">正文</th>'
         f'<th style="text-align:right;padding:6px 8px;border-bottom:1px solid {THEME_LINE};">触达</th>'
