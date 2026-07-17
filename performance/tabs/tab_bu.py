@@ -6,7 +6,7 @@ tab_bu.py - 第三层：BU 分析
 import streamlit as st
 import pandas as pd
 from performance.config import MCD_DARK_RED, MCD_RED, MCD_GREEN, THEME_INK, THEME_INK2, THEME_MUTED, THEME_PAPER, THEME_LINE, THEME_ROW_ALT, THEME_RADIUS_M
-from performance.components import section_header
+from performance.components import section_header, insight_block
 from performance.tabs.tab_plan import parse_message_content
 
 
@@ -362,7 +362,10 @@ def render(df: pd.DataFrame, prior_df: pd.DataFrame | None = None, bu_summary: d
             + '</div>'
         )
 
-    return [], bu_rank_html + bu_table_html + bu_summary_export
+    # ─── 本板块洞察（BU 总览表下面）────────────────────
+    bu_insight_html = insight_block("insight_bu", label="BU 分析洞察")
+
+    return [], bu_rank_html + bu_table_html + bu_summary_export + bu_insight_html
 
 
 # ─── BU 发送明细（嵌进 BU 表每行，作为 <details> 展开子表）────

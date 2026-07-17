@@ -467,7 +467,7 @@ def _render_section(num: int, title: str, content: str) -> str:
 """
 
 
-def generate_html(target: int, figs: dict, tables: dict, kpis: dict, period_str: str = "", channel_health_html: str = "") -> str:
+def generate_html(target: int, figs: dict, tables: dict, kpis: dict, period_str: str = "", channel_health_html: str = "", insights: dict | None = None) -> str:
     """
     生成完整的 HTML 文件。
 
@@ -478,7 +478,10 @@ def generate_html(target: int, figs: dict, tables: dict, kpis: dict, period_str:
         kpis: 各 tab 的 KPI 数据字典
         period_str: 日期范围显示文本
         channel_health_html: 渠道健康度模块 HTML（由 page.py 预渲染传入，live 与导出共用）
+        insights: AI 占位洞察 HTML 字典 {"summary": ..., "channel": ..., "bu": ...}
+                  "bu" 已在 tables["bu"] 内合并，导出端不用追加
     """
+    insights = insights or {}
     if not period_str:
         period_str = date.today().strftime("%Y-%m-%d")
     today_str = date.today().strftime("%Y-%m-%d")
@@ -502,6 +505,8 @@ def generate_html(target: int, figs: dict, tables: dict, kpis: dict, period_str:
     summary_content = _render_kpi_row(cards)
     for fig in figs.get("summary", []):
         summary_content += _fig_to_html(fig)
+    # 本板块洞察（每日 DAU 趋势图下方）
+    summary_content += insights.get("summary", "")
 
     # ─── Section 2: Operational ───
     op_kpis = kpis.get("operational", {})
@@ -524,6 +529,8 @@ def generate_html(target: int, figs: dict, tables: dict, kpis: dict, period_str:
         op_content += _fig_to_html(op_figs[1])
     # 渠道健康度（HTML 由 page.py 预渲染传入，live 与导出共用，避免重复计算）
     op_content += channel_health_html
+    # 本板块洞察（渠道健康度下方）
+    op_content += insights.get("channel", "")
 
     # ─── Section 3: BU ───
     bu_content = tables.get("bu", "")

@@ -15,6 +15,7 @@ from shared.header import render_header, clear_header
 from shared.footer import render_footer
 from performance.scoring import compute_scores
 from shared.styles import get_css
+from performance.components import insight_block
 from performance.tabs.tab_summary import render as render_summary
 from performance.tabs.tab_operational import render as render_operational
 from performance.tabs.tab_bu import render as render_bu, _compute_bu_metrics, _prior_metrics_by_bu
@@ -350,7 +351,7 @@ def render_page(raw_df, dau_df):
         dau_df = dau_df[(dau_df["日期"].dt.date >= start_date) & (dau_df["日期"].dt.date <= end_date)]
 
     st.markdown('<div id="sec-summary"></div>', unsafe_allow_html=True)
-    summary_figs, summary_kpis = render_summary(df, target_dau, dau_df=dau_df)
+    summary_figs, summary_kpis, summary_insight_html = render_summary(df, target_dau, dau_df=dau_df)
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
     st.markdown('<div id="sec-operational"></div>', unsafe_allow_html=True)
@@ -359,6 +360,9 @@ def render_page(raw_df, dau_df):
     # 渠道健康度（基期=现期之前所有历史；live 与导出共用同一份 HTML，避免重复计算）
     channel_health_html = render_channel_health(df, raw_df=raw_df, start_date=start_date, end_date=end_date)
     st.markdown(channel_health_html, unsafe_allow_html=True)
+
+    # ─── 本板块洞察（渠道健康度下面）─────────────
+    channel_insight_html = insight_block("insight_channel", label="渠道健康度洞察")
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
     st.markdown('<div id="sec-bu"></div>', unsafe_allow_html=True)
@@ -379,7 +383,12 @@ def render_page(raw_df, dau_df):
     figs = {"summary": summary_figs, "operational": op_figs, "bu": bu_figs}
     kpis = {"summary": summary_kpis, "operational": op_kpis}
     tables = {"operational": op_detail_html, "bu": bu_table_html, "plan": plan_html, "topics": topics_html}
-    html_content = generate_html(target_dau, figs, tables, kpis, period_str=f"{start_date} ~ {end_date}", channel_health_html=channel_health_html)
+    insights = {
+        "summary": summary_insight_html,
+        "channel": channel_insight_html,
+        "bu": "",  # 已合并到 tables["bu"]，导出端自动跟进
+    }
+    html_content = generate_html(target_dau, figs, tables, kpis, period_str=f"{start_date} ~ {end_date}", channel_health_html=channel_health_html, insights=insights)
     st.session_state["export_html"] = html_content
 
     # ─── 页脚部门版权 ─────────────────────────────────────

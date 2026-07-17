@@ -7,7 +7,7 @@ import streamlit as st
 import plotly.graph_objects as go
 import pandas as pd
 from performance.config import MCD_RED, MCD_GREEN, THEME_BG
-from performance.components import kpi_card, kpi_row, section_header
+from performance.components import kpi_card, kpi_row, section_header, insight_block
 
 
 def render(df: pd.DataFrame, target: int, dau_df: pd.DataFrame = None):
@@ -138,4 +138,8 @@ def render(df: pd.DataFrame, target: int, dau_df: pd.DataFrame = None):
         "dau_label": dau_label,
     }
     figs = [fig_json]
-    return figs, kpis
+
+    # ─── 本板块洞察（每日 DAU 趋势图下方）────────────
+    summary_insight_html = insight_block("insight_summary")
+
+    return figs, kpis, summary_insight_html

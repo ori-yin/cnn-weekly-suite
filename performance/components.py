@@ -4,6 +4,20 @@ components.py - CNN Performance Weekly：可复用 UI 组件
 """
 
 
+import re as _re
+import streamlit as st
+import markdown as _md
+
+# 行首的 # / ## / ### 后无空格时自动补一格（CommonMark 规范要求 # 后必须有空格才是 heading）
+# lookahead 排除 # 和空白，避免 `## 一段` 被错误拆成 `# # 一段`
+# 仅在渲染时归一化，session_state 里保留用户原文，方便继续编辑
+_HEAD_RE = _re.compile(r'^(#+)(?=[^#\s])', _re.MULTILINE)
+
+
+def _norm_md(md: str) -> str:
+    return _HEAD_RE.sub(r'\1 ', md)
+
+
 def _fmt_number(val, unit=""):
     """格式化数字：大数用 K/M，百分比保留 1 位"""
     if unit == "%":
@@ -75,3 +89,51 @@ def section_header(title: str, number: int = None, subtitle: str = "") -> str:
         head = f'<div class="section-header"><h2>{title}</h2></div>'
     sub = f'<div class="section-subheader">{subtitle}</div>' if subtitle else ""
     return head + sub
+
+
+def insight_block(key: str, label: str = "本板块洞察") -> str:
+    """
+    AI 占位 markdown block：UI 跟 tab_topics 一致（容器预览 + text_area 编辑）。
+    每个埋点用独立的 key，session_state 隔离内容。
+
+    - key:    session_state 中存 markdown 的键（每个调用点不同）
+    - label:  区块标题（默认 "本板块洞察"）
+    - 返回:   渲染后的 HTML 字符串（用于导出 HTML）；未填时返回 ""
+    """
+    SESSION_KEY = key
+    EDITOR_KEY = key + "_editor"
+
+    DEFAULT_MD = (
+        "# 本板块洞察\n\n"
+        "让 AI 读取整页 HTML 后写在此处。\n\n"
+        "- 支持标题、列表、表格\n"
+        "- 支持 **加粗** *斜体* `代码`\n"
+    )
+
+    if SESSION_KEY not in st.session_state:
+        st.session_state[SESSION_KEY] = DEFAULT_MD
+
+    md_src = st.session_state[SESSION_KEY]
+    empty = (not md_src.strip()) or md_src.strip() == DEFAULT_MD.strip()
+
+    with st.container(border=True):
+        st.markdown(section_header(label, number=None, subtitle=""), unsafe_allow_html=True)
+        if empty:
+            st.info("暂无内容，请在下方编辑 Markdown。AI 读取整页 HTML 后把洞察写在这里。")
+        else:
+            html_preview = _md.markdown(_norm_md(md_src), extensions=["tables", "fenced_code"])
+            st.markdown(html_preview, unsafe_allow_html=True)
+
+    st.markdown('<div class="section-subheader">编辑 Markdown</div>', unsafe_allow_html=True)
+    st.text_area(
+        f"{label} Markdown 源",
+        value=md_src,
+        height=180,
+        label_visibility="collapsed",
+        key=EDITOR_KEY,
+        on_change=lambda: st.session_state.__setitem__(SESSION_KEY, st.session_state[EDITOR_KEY]),
+    )
+
+    if empty:
+        return ""
+    return _md.markdown(_norm_md(md_src), extensions=["tables", "fenced_code"])
