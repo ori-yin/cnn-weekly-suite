@@ -149,7 +149,12 @@ def _read_xlsx(uploaded_file) -> pd.DataFrame:
 def read_dau_sheet(file_bytes: bytes) -> pd.DataFrame:
     """
     读取 XLSX 的第二个 sheet（按天去重 DAU）。
-    期望两列：第一列日期，第二列 DAU。
+
+    支持两种格式（自动识别）：
+      - 旧格式（2 列）：日期 / DAU
+      - 新格式（3 列）：日期 / 渠道 / DAU；仅保留 渠道=ALL/all 的行作为总 DAU
+
+    返回列固定为 [日期, DAU]，下游无需感知列数差异。
     接受 bytes（由调用方从 uploaded.read() 获得），避免重复读取流。
     """
     wb = _open_xlsx_sheets(file_bytes)
@@ -164,18 +169,41 @@ def read_dau_sheet(file_bytes: bytes) -> pd.DataFrame:
     if len(rows) < 2:
         return pd.DataFrame()
 
-    # 不依赖列名，直接按位置：第一列=日期，第二列=DAU
-    data_rows = [r for r in rows[1:] if len(r) >= 2]  # 跳过表头，过滤不足2列的脏行
-    dates = [r[0] for r in data_rows]
-    daus = [r[1] for r in data_rows]
+    # 自动检测：3 列格式需 r[1] 为非空字符串（渠道名），而非数字
+    has_channel = any(
+        len(r) >= 3 and r[1] is not None and isinstance(r[1], str)
+        for r in rows[1:]
+    )
 
+    if has_channel:
+        # 3 列格式：仅保留 渠道=ALL/all 行，输出 [日期, DAU]
+        data_rows = [
+            (r[0], r[2])
+            for r in rows[1:]
+            if len(r) >= 3
+            and r[0] is not None and r[1] is not None and r[2] is not None
+            and str(r[1]).strip().upper() == "ALL"
+        ]
+    else:
+        # 旧格式：2 列直接取
+        data_rows = [
+            (r[0], r[1])
+            for r in rows[1:]
+            if len(r) >= 2 and r[0] is not None and r[1] is not None
+        ]
+
+    if not data_rows:
+        return pd.DataFrame()
+
+    dates, daus = zip(*data_rows)
     df = pd.DataFrame({
-        "日期": pd.to_datetime(dates, errors="coerce"),
-        "DAU": pd.to_numeric(daus, errors="coerce"),
+        "日期": pd.to_datetime(list(dates), errors="coerce"),
+        "DAU": pd.to_numeric(list(daus), errors="coerce"),
     })
 
     # 去掉空行
     df = df.dropna(subset=["日期", "DAU"])
+    df = df.sort_values("日期").reset_index(drop=True)
 
     return df
 
