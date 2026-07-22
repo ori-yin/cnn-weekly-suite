@@ -30,9 +30,15 @@ streamlit run app.py --server.port 8505
 
 沿用老项目：上传 `.xlsx / .xls / .csv`。
 - **Sheet 1** — Plan 级触达明细（发送日期 / 计划类型 / 渠道 / Plan ID / 预算owner / 触达成功 / 点击人次 / 订单GC / 订单Sales / 消息标题 / 消息内容 …）
-- **Sheet 2** — 按天去重 DAU（第 1 列日期、第 2 列 DAU，按位置读取）
+- **Sheet 2** — 按天去重 DAU。两种格式按位置自动识别：
+  - **2 列（日期 / DAU）** — 直接取每行作为总 DAU
+  - **3 列（日期 / 渠道 / DAU）** — 仅保留 `渠道=ALL/all` 的行（总 DAU）；其他渠道行忽略
 
 列名走 fuzzy 匹配（见 `shared/theme.py::COLUMN_MAPPING`），CSV 多编码兜底。
+
+### DAU SQL
+
+Sheet 2 的导出 SQL：见 `sql/dau查询.sql`（输出 ALL 总 DAU + 各渠道 DAU 两段 UNION）。
 
 ## 目录结构
 
