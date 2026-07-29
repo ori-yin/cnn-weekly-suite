@@ -5,6 +5,7 @@ tab_plan.py - 第四层：内容分析
 
 import json
 import re
+import numpy as np
 import streamlit as st
 import pandas as pd
 from performance.config import MCD_RED, MCD_GOLD, MCD_GREEN, MCD_DARK_RED, CHANNELS, THEME_INK, THEME_INK2, THEME_MUTED, THEME_LINE, THEME_PAPER, THEME_TAG_BG, THEME_TAG_BORDER, THEME_RADIUS_S, THEME_RADIUS_M
@@ -171,6 +172,10 @@ def _plan_card_html(row: pd.Series, rank: int, is_good: bool, ai_result: dict = 
         ("GC率", f'{row.get("GC转化率", 0):.1f}%'),
         ("Sales", f'{row.get("订单Sales", 0):,.2f}'),
     ]
+    # 新数据（>=7/28）多 Unit 同文案时显示 Unit 数副标；旧数据无该列时跳过
+    if "Unit数" in row.index and int(row.get("Unit数", 0) or 0) > 1:
+        unit_n = int(row["Unit数"])
+        metrics.insert(0, ("Unit", f"{unit_n}组"))
     metrics_html = ""
     for label, val in metrics:
         metrics_html += (
@@ -243,7 +248,17 @@ def _ai_inline_html(ai_result: dict = None, is_good: bool = True) -> str:
 
 
 def _aggregate_plans(ch_df: pd.DataFrame) -> pd.DataFrame:
-    """按 Plan 聚合单个渠道的数据"""
+    """按 Plan × Message 聚合单个渠道的数据。
+
+    一张卡片 = 一个 Plan × 一条文案（Message）。
+    同一文案按 Unit 拆分后投放（千人千面），Unit 不参与聚合。
+    旧数据无 message_id 时退化为 (Plan, 消息标题)，等价于旧行为。
+
+    Why 合并 Unit: 不合并会导致
+      ① 一条文案按 Unit 数重复占榜（7/06 东北市场短信 7 个 Unit 占 7 个榜位）
+      ② Unit 间 CTR 差异来自人群/落地页，不是文案差异，会污染内容排行
+    Why 拆 Message: 一 Plan 多文案（实验/分时）每条文案是独立投放策略，必须各自一张卡。
+    """
     agg_dict = {
         "Plan名称": "first",
         "预算owner": "first",
@@ -251,16 +266,43 @@ def _aggregate_plans(ch_df: pd.DataFrame) -> pd.DataFrame:
         "触达成功": "sum",
         "点击人次": "sum",
         "订单GC": "sum",
-        "综合评分": "mean",
-        "CTR": "mean",
-        "GC转化率": "mean",
         "消息标题": "first",
         "消息内容": "first",
     }
+    if "综合评分" in ch_df.columns:
+        agg_dict["综合评分"] = "mean"
     if "订单Sales" in ch_df.columns:
         agg_dict["订单Sales"] = "sum"
-    plan_agg = ch_df.groupby("Plan ID").agg(agg_dict).reset_index()
+
+    # 聚合键选择：新数据 (Plan, Message)，旧数据退化 (Plan, 消息标题)
+    # 旧数据 read_data 会把缺失列填 None，所以"列存在 + 有非 None 值"才是真新数据
+    has_message = "Message ID" in ch_df.columns and ch_df["Message ID"].notna().any()
+    if has_message:
+        keys = ["Plan ID", "Message ID"]
+        # Unit 数：nunique，忽略 NaN 和 "[NULL]" 占位符（先占位 Unit ID，groupby 后 rename）
+        if "Unit ID" in ch_df.columns:
+            agg_dict["Unit ID"] = lambda s: s.dropna().loc[lambda x: ~x.astype(str).isin(("[NULL]", ""))].nunique()
+    else:
+        keys = ["Plan ID", "消息标题"]
+
+    plan_agg = ch_df.groupby(keys, dropna=False, as_index=False).agg(agg_dict)
+    # rename Unit ID -> Unit数（仅新数据加过这列）
+    if has_message and "Unit ID" in plan_agg.columns:
+        plan_agg = plan_agg.rename(columns={"Unit ID": "Unit数"})
     plan_agg = plan_agg[plan_agg["触达成功"] > 0]
+
+    # 聚合后必须先求和再算率（CTR/GC 转化率），避免按行先算率再平均的精度坑
+    plan_agg["CTR"] = np.where(
+        plan_agg["触达成功"] > 0,
+        plan_agg["点击人次"] / plan_agg["触达成功"] * 100,
+        0.0,
+    )
+    plan_agg["GC转化率"] = np.where(
+        plan_agg["点击人次"] > 0,
+        plan_agg["订单GC"] / plan_agg["点击人次"] * 100,
+        0.0,
+    )
+
     return plan_agg
 
 

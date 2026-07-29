@@ -32,9 +32,24 @@ def _fuzzy_match_columns(df: pd.DataFrame) -> dict:
     return mapping
 
 
+# 业务 ID 列（18 位数字 ID 超过 float64 精度 2^53，必须保持字符串）
+ID_COLS = ("Plan ID", "Unit ID", "Message ID")
+
+
+def _normalize_id_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """ID 列去不可见字符（上游 Message ID 末尾常带 \\t）"""
+    for col in ID_COLS:
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.strip()
+    return df
+
+
 def _coerce_numeric_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """将数值列统一转为 float64"""
+    """将数值列统一转为 float64（跳过业务 ID 列）"""
     for col in df.columns:
+        if col in ID_COLS:
+            # 18 位 ID 不能转 float64（精度爆炸），保持字符串
+            continue
         if pd.api.types.is_numeric_dtype(df[col]):
             df[col] = df[col].astype("float64")
         else:
@@ -141,6 +156,7 @@ def _read_xlsx(uploaded_file) -> pd.DataFrame:
     data_rows = rows[1:]
 
     df = pd.DataFrame(data_rows, columns=headers)
+    df = _normalize_id_columns(df)
     df = _coerce_numeric_columns(df)
 
     return df
@@ -215,6 +231,7 @@ def _read_csv(uploaded_file) -> pd.DataFrame:
     for enc in ENCODINGS:
         try:
             df = pd.read_csv(BytesIO(bytes_data), encoding=enc, on_bad_lines="skip")
+            _normalize_id_columns(df)
             return df
         except Exception:
             continue

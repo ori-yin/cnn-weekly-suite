@@ -371,8 +371,9 @@ def render(df: pd.DataFrame, prior_df: pd.DataFrame | None = None, bu_summary: d
 # ─── BU 发送明细（嵌进 BU 表每行，作为 <details> 展开子表）────
 
 def _aggregate_bu_plans(bu_df: pd.DataFrame) -> list:
-    """单个 BU 的 df 按 Plan ID 聚合，1 Plan 1 行，按 CTR 降序。
-    计划类型 / 渠道多值时拼接为单一展示串（_format_*）。"""
+    """单个 BU 的 df 按 Plan × Message 聚合，1 Plan × 1 文案 1 行，按 CTR 降序。
+    计划类型 / 渠道多值时拼接为单一展示串（_format_*）。
+    新数据按 (Plan, Message) 拆，旧数据退化 (Plan)。"""
     if bu_df is None or bu_df.empty:
         return []
     agg_dict = {
@@ -388,10 +389,25 @@ def _aggregate_bu_plans(bu_df: pd.DataFrame) -> list:
         agg_dict["订单Sales"] = "sum"
     if "渠道" in bu_df.columns:
         agg_dict["渠道"] = lambda s: _format_channels(s.tolist())
-    plan_agg = bu_df.groupby("Plan ID").agg(agg_dict).reset_index()
+
+    # 聚合键：新数据 (Plan, Message)，旧数据退化 (Plan)
+    has_message = "Message ID" in bu_df.columns and bu_df["Message ID"].notna().any()
+    if has_message:
+        keys = ["Plan ID", "Message ID"]
+        # Unit 数：nunique，忽略 NaN 和 "[NULL]" 占位符
+        if "Unit ID" in bu_df.columns:
+            agg_dict["Unit ID"] = lambda s: s.dropna().loc[lambda x: ~x.astype(str).isin(("[NULL]", ""))].nunique()
+    else:
+        keys = ["Plan ID"]
+
+    plan_agg = bu_df.groupby(keys, dropna=False, as_index=False).agg(agg_dict)
+    # rename Unit ID -> Unit数（仅新数据加过这列）
+    if has_message and "Unit ID" in plan_agg.columns:
+        plan_agg = plan_agg.rename(columns={"Unit ID": "Unit数"})
     parsed = plan_agg["消息内容"].apply(parse_message_content)
     plan_agg["消息标题"] = parsed.apply(lambda x: x[0])
     plan_agg["消息内容"] = parsed.apply(lambda x: x[1])
+    # 聚合后必须先求和再算率
     plan_agg["CTR"] = plan_agg.apply(
         lambda r: r["点击人次"] / r["触达成功"] * 100 if r["触达成功"] > 0 else 0,
         axis=1,

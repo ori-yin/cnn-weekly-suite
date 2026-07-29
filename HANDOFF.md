@@ -405,3 +405,54 @@ Mac 的 `a2bbcc4` 是 root commit，**只推了 7 个 emergency 文件**（day_t
 3. 选项 A（推荐）：明天生成新 PAT 贴回来，权限 `Contents: Read & write` 只给本仓库，让我接着跑 `git add . && git commit -m "feat: 本地 7/15 累计更新（44 文件）" && git push -u origin main`
 4. 选项 B：你手动跑上面那行 git 命令
 5. **风险**：本目录是 OneDrive ReparsePoint，git + OneDrive 同步 `.git/` 时可能锁文件打架。建议把仓库物理移到 `C:\Projects\cnn-weekly-suite` 再 push。更稳。
+
+---
+
+## 17. 2026-07-29 数据列变更适配（Sheet 1: 15 列 → 17 列）
+
+上游 SQL 导出格式变更，新增 `Unit ID`（列 5）+ `Message ID`（列 15）。Plan 不再是"一 Plan 一文案"——可能拆成多 Unit + 多文案（千人千面 / 实验分时）。
+
+**改动文件**
+
+| 文件 | 改动 |
+|---|---|
+| `shared/theme.py` | `COLUMN_MAPPING` 加 `Unit ID` / `Message ID` 别名 |
+| `shared/data.py` | 新增 `ID_COLS = ("Plan ID","Unit ID","Message ID")`，18 位 ID 跳过数值化；新增 `_normalize_id_columns` strip 尾部 `\t`；`_coerce_numeric_columns` skip ID 列；`_read_xlsx` / `_read_csv` 调用 normalize |
+| `performance/tabs/tab_plan.py::_aggregate_plans` | 聚合键 (Plan, Message) + Unit数；先求和再算率（CTR/GC 转化率）；`dropna=False, as_index=False` |
+| `performance/tabs/tab_bu.py::_aggregate_bu_plans` | 同上（BU 浮层子表）|
+| `performance/page.py` | AI handler groupby (Plan, Message)；AI key 带 Message ID 后缀避免撞 key；top/bot 排序二级 tie-break 加 Message ID |
+| `performance/tabs/tab_plan.py::_plan_card_html` | 卡片数据豆腐块加 `Unit` 药丸（仅 Unit数>1 时显示）|
+
+**业务语义（与 mcd-content-rank 一致）**
+
+- 一张内容排行榜卡片 = `Plan × Message`（Unit 不参与）
+- Unit 业务含义：**千人千面**分组（同文案不同投放批次/人群），Unit 间 CTR 差异来自人群/落地页不是文案差异
+- 一 Plan 一文案 → 1 张卡
+- 一 Plan 多 Unit 同文案 → 1 张卡（副标 `N组 Unit`，合并千人千面）
+- 一 Plan 多文案 → 每条文案各 1 张卡（实验/分时是独立策略）
+
+**向后兼容**
+
+旧数据（无 Message ID）`read_data` 会自动填 None 列。判定走 `notna().any()`：
+- 新数据 → 聚合 (Plan, Message)
+- 旧数据 → 退化按 Plan 聚合
+
+**ID 链路 sanity check**（基于 cnn0728.xlsx 1067 行）
+
+- Plan 数 231，平均 Unit/Plan 1.37（max 10），平均 Message/Plan 1.18（max 6）
+- `(Plan, Message)` 内 0/273 跨渠道/owner/标题 ✅
+- Unit ID = `[NULL]` 占位 19%（业务等同空值）
+- Message ID 18 位数字（超过 float64 精度 2^53，必须字符串化）
+
+**端到端验证**（cnn0728.xlsx 503 行 → 167 Plan×Message，cnn0727.xlsx 451 行 → 166 Plan，全部测试通过）
+
+**关联**
+
+- 数据列变更流程模板：`~/桌面/数据列变更适配 Handoff.md`
+- 业务语义沉淀：`project_cnn_weekly_suite_unit_id` memory
+- 参考 commit：`mcd-content-rank/dbb785f`（同套路）
+
+**遗留**
+
+- emergency 模块**未同步**（B 方案不含）。如需要后续：emergency 各 section 加 Unit数量 KPI 即可，核心聚合（按 发送日期×计划类型/渠道）不受影响
+- 评分算法阈值未针对新数据分布重算（Q3 校准待做）

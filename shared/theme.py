@@ -34,6 +34,8 @@ COLUMN_MAPPING = {
     "计划类型": ["计划类型", "plan_type", "nudge", "类型"],
     "渠道": ["渠道", "channel"],
     "Plan ID": ["Plan ID", "plan_id", "planid"],
+    "Unit ID": ["Unit ID", "unit_id", "unitid", "unit"],
+    "Message ID": ["Message ID", "message_id", "messageid", "msg_id"],
     "Plan名称": ["Plan名称", "plan_name", "planname", "名称"],
     "预算owner": ["预算owner", "owner", "BU", "bu", "预算"],
     "是否用券": ["是否用券", "coupon", "用券"],

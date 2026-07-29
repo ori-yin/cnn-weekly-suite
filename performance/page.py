@@ -182,7 +182,10 @@ def render_page(raw_df, dau_df):
                         "综合评分": _safe_float(row.get("综合评分")),
                         "排名": rank,
                     })
-                    keys.append(f"{row['Plan ID']}_{ch}_{dim_id}_{tier}")
+                    # AI key: 新数据带 Message ID（避免一 Plan 多文案撞 key），旧数据退化 Plan ID
+                    msg_id = str(row.get("Message ID", "")).strip() if "Message ID" in row.index else ""
+                    key_pid = f"{row['Plan ID']}_{msg_id}" if msg_id else str(row['Plan ID'])
+                    keys.append(f"{key_pid}_{ch}_{dim_id}_{tier}")
                 return items, keys
 
             for ch in AI_CHANNELS:
@@ -195,8 +198,6 @@ def render_page(raw_df, dau_df):
                     "点击人次": "sum",
                     "订单GC": "sum",
                     "综合评分": "mean",
-                    "CTR": "mean",
-                    "GC转化率": "mean",
                     "消息标题": "first",
                 }
                 if "消息内容_parsed" in ch_df.columns:
@@ -206,7 +207,27 @@ def render_page(raw_df, dau_df):
                 if "订单Sales" in ch_df.columns:
                     agg["订单Sales"] = "sum"
 
-                plan_agg = ch_df.groupby("Plan ID").agg(agg).reset_index()
+                # 聚合键：新数据 (Plan, Message)，旧数据退化 (Plan)
+                if "Message ID" in ch_df.columns and ch_df["Message ID"].notna().any():
+                    group_keys = ["Plan ID", "Message ID"]
+                else:
+                    group_keys = ["Plan ID"]
+
+                plan_agg = ch_df.groupby(group_keys, dropna=False, as_index=False).agg(agg)
+                # 聚合后必须先求和再算率（CTR/GC转化率），避免按行先算率再平均的精度坑
+                if "触达成功" in plan_agg.columns and "点击人次" in plan_agg.columns:
+                    import numpy as _np
+                    plan_agg["CTR"] = _np.where(
+                        plan_agg["触达成功"] > 0,
+                        plan_agg["点击人次"] / plan_agg["触达成功"] * 100,
+                        0.0,
+                    )
+                    plan_agg["GC转化率"] = _np.where(
+                        plan_agg["点击人次"] > 0,
+                        plan_agg["订单GC"] / plan_agg["点击人次"] * 100,
+                        0.0,
+                    )
+
                 plan_agg = plan_agg[plan_agg["触达成功"] > 0]
                 if len(plan_agg) < 2:
                     continue
@@ -234,10 +255,15 @@ def render_page(raw_df, dau_df):
                 summary_tasks.append((ch, partial(analyze_channel_summary, ai_api_key, ai_provider, ai_model, ch, summary_items)))
 
                 for dim_id, sort_col in DIMS:
-                    # 先按当前维度 desc 预排，二级 tie-break by "Plan ID" asc，与 _export_channel_tabs 对齐
+                    # 先按当前维度 desc 预排，二级 tie-break by "Plan ID" asc（+ Message ID 新数据），与 _export_channel_tabs 对齐
                     # 避免同 Sales 值时 handler/UI/导出 三端 Plan ID 顺序分歧导致 AI key 对不上
                     sort_col_eff = sort_col if sort_col in plan_agg.columns else "综合评分"
-                    plan_agg_sorted = plan_agg.sort_values([sort_col_eff, "Plan ID"], ascending=[False, True])
+                    sort_keys = [sort_col_eff, "Plan ID"]
+                    sort_asc = [False, True]
+                    if "Message ID" in plan_agg.columns:
+                        sort_keys.append("Message ID")
+                        sort_asc.append(True)
+                    plan_agg_sorted = plan_agg.sort_values(sort_keys, ascending=sort_asc)
 
                     # 高分 TOP3 → Good Case（已 desc 排，直接 head(3)）
                     dim_top = plan_agg_sorted.head(3)
@@ -250,7 +276,12 @@ def render_page(raw_df, dau_df):
                     # 避免同 Sales 值时 handler/UI/导出 三端 Plan ID 顺序分歧导致 AI key 对不上
                     top_plan_ids = set(dim_top["Plan ID"])
                     bot_pool = plan_agg_sorted[~plan_agg_sorted["Plan ID"].isin(top_plan_ids)]
-                    dim_bot = bot_pool.sort_values([sort_col_eff, "Plan ID"], ascending=[True, True], na_position="last").head(3)
+                    bot_sort_keys = [sort_col_eff, "Plan ID"]
+                    bot_sort_asc = [True, True]
+                    if "Message ID" in bot_pool.columns:
+                        bot_sort_keys.append("Message ID")
+                        bot_sort_asc.append(True)
+                    dim_bot = bot_pool.sort_values(bot_sort_keys, ascending=bot_sort_asc, na_position="last").head(3)
                     bot_items, bot_keys = _build_items(dim_bot, ch, dim_id, tier="bot")
                     plan_tasks.append((bot_keys, partial(analyze_content, ai_api_key, ai_provider, ai_model, bot_items, False, top_items)))
 

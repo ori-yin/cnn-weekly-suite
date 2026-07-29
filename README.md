@@ -40,6 +40,12 @@ streamlit run app.py --server.port 8505
 
 Sheet 2 的导出 SQL：见 `sql/dau查询.sql`（输出 ALL 总 DAU + 各渠道 DAU 两段 UNION）。
 
+### 数据源变更历史
+
+| 日期 | 变更 | 影响 |
+|---|---|---|
+| 2026-07-28 | Sheet 1 从 15 列扩到 17 列，新增 `Unit ID`（列 5）和 `Message ID`（列 15） | 内容排行榜粒度从 `Plan` 拆到 `Plan × Message`，多文案独立成卡；Unit 千人千面不参与聚合（合并到同文案）|
+
 ## 目录结构
 
 ```
