@@ -10,6 +10,7 @@ import streamlit as st
 import pandas as pd
 from performance.config import MCD_RED, MCD_GOLD, MCD_GREEN, MCD_DARK_RED, CHANNELS, THEME_INK, THEME_INK2, THEME_MUTED, THEME_LINE, THEME_PAPER, THEME_TAG_BG, THEME_TAG_BORDER, THEME_RADIUS_S, THEME_RADIUS_M
 from performance.components import section_header
+from shared.data import add_rate_metrics, data_is_v2, _normalize_unit_column
 
 
 # 内容分析渠道列表：仅 APP Push + 企微1v1（与 AI_CHANNELS 对齐）
@@ -173,8 +174,8 @@ def _plan_card_html(row: pd.Series, rank: int, is_good: bool, ai_result: dict = 
         ("Sales", f'{row.get("订单Sales", 0):,.2f}'),
     ]
     # 新数据（>=7/28）多 Unit 同文案时显示 Unit 数副标；旧数据无该列时跳过
-    if "Unit数" in row.index and int(row.get("Unit数", 0) or 0) > 1:
-        unit_n = int(row["Unit数"])
+    unit_n = int(row.get("Unit数") or 0)
+    if "Unit数" in row.index and unit_n > 1:
         metrics.insert(0, ("Unit", f"{unit_n}组"))
     metrics_html = ""
     for label, val in metrics:
@@ -269,41 +270,31 @@ def _aggregate_plans(ch_df: pd.DataFrame) -> pd.DataFrame:
         "消息标题": "first",
         "消息内容": "first",
     }
+    # 综合评分：caller (render) 一般已 early-return，但单测直接调函数时可能缺列，保留守卫
     if "综合评分" in ch_df.columns:
         agg_dict["综合评分"] = "mean"
     if "订单Sales" in ch_df.columns:
         agg_dict["订单Sales"] = "sum"
 
-    # 聚合键选择：新数据 (Plan, Message)，旧数据退化 (Plan, 消息标题)
-    # 旧数据 read_data 会把缺失列填 None，所以"列存在 + 有非 None 值"才是真新数据
-    has_message = "Message ID" in ch_df.columns and ch_df["Message ID"].notna().any()
+    # 聚合键：新数据 (Plan, Message)，旧数据退化 (Plan, 消息标题)
+    has_message = data_is_v2(ch_df)
     if has_message:
         keys = ["Plan ID", "Message ID"]
-        # Unit 数：nunique，忽略 NaN 和 "[NULL]" 占位符（先占位 Unit ID，groupby 后 rename）
-        if "Unit ID" in ch_df.columns:
-            agg_dict["Unit ID"] = lambda s: s.dropna().loc[lambda x: ~x.astype(str).isin(("[NULL]", ""))].nunique()
+        # 预归一化 Unit ID（"[NULL]" / "" → NaN），groupby 后单独算 nunique + merge
+        _normalize_unit_column(ch_df)
     else:
         keys = ["Plan ID", "消息标题"]
 
     plan_agg = ch_df.groupby(keys, dropna=False, as_index=False).agg(agg_dict)
-    # rename Unit ID -> Unit数（仅新数据加过这列）
-    if has_message and "Unit ID" in plan_agg.columns:
-        plan_agg = plan_agg.rename(columns={"Unit ID": "Unit数"})
+
+    # Unit数：单独算（nunique _unit_norm）+ left merge（避免 pandas agg_dict 不支持 named agg）
+    if has_message:
+        unit_n = ch_df.groupby(keys, dropna=False)["_unit_norm"].nunique().reset_index(name="Unit数")
+        plan_agg = plan_agg.merge(unit_n, on=keys, how="left")
+
     plan_agg = plan_agg[plan_agg["触达成功"] > 0]
-
     # 聚合后必须先求和再算率（CTR/GC 转化率），避免按行先算率再平均的精度坑
-    plan_agg["CTR"] = np.where(
-        plan_agg["触达成功"] > 0,
-        plan_agg["点击人次"] / plan_agg["触达成功"] * 100,
-        0.0,
-    )
-    plan_agg["GC转化率"] = np.where(
-        plan_agg["点击人次"] > 0,
-        plan_agg["订单GC"] / plan_agg["点击人次"] * 100,
-        0.0,
-    )
-
-    return plan_agg
+    return add_rate_metrics(plan_agg)
 
 
 def _render_plan_cards(top_n: pd.DataFrame, ch: str, dim_id: str = "score", ai_results: dict = None):

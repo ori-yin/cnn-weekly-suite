@@ -93,6 +93,42 @@ def _derive_metrics(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def add_rate_metrics(df: pd.DataFrame) -> pd.DataFrame:
+    """聚合后必须先求和再算率（CTR / GC 转化率）：避免按行先算率再平均的精度坑。
+    与 _derive_metrics 的区别：本函数假设 df 是已聚合后的明细（行=聚合键），用 np.where
+    保证分母>0 才算率，否则 0.0。"""
+    if "触达成功" in df.columns and "点击人次" in df.columns:
+        df["CTR"] = np.where(
+            df["触达成功"] > 0,
+            df["点击人次"] / df["触达成功"] * 100,
+            0.0,
+        )
+    if "订单GC" in df.columns and "点击人次" in df.columns:
+        df["GC转化率"] = np.where(
+            df["点击人次"] > 0,
+            df["订单GC"] / df["点击人次"] * 100,
+            0.0,
+        )
+    return df
+
+
+def data_is_v2(df: pd.DataFrame) -> bool:
+    """判断 df 是否是新版（含 Message ID 的 17 列格式）。
+    旧文件 read_data 会把缺失列填 None，所以"列存在 + 有非 None 值"才是真新数据。
+    三个 caller（tab_plan._aggregate_plans / tab_bu._aggregate_bu_plans / page.py AI handler）
+    都用这同一个判定。"""
+    return "Message ID" in df.columns and bool(df["Message ID"].notna().any())
+
+
+def _normalize_unit_column(df: pd.DataFrame) -> None:
+    """预归一化 Unit ID：把 "[NULL]" / "" 视为缺失，便于 groupby 用 nunique 一次性向量化。
+    就地修改 df；调用方如不想污染原 df 请先 copy。"""
+    if "Unit ID" not in df.columns:
+        return
+    u = df["Unit ID"].astype(str).str.strip()
+    df["_unit_norm"] = u.mask(u.isin(("[NULL]", "")))
+
+
 def read_data(uploaded_file, file_bytes: bytes = None) -> pd.DataFrame:
     """
     读取上传的 CSV 或 XLSX 文件，返回标准化的 DataFrame。

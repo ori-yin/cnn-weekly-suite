@@ -8,6 +8,7 @@ import pandas as pd
 from performance.config import MCD_DARK_RED, MCD_RED, MCD_GREEN, THEME_INK, THEME_INK2, THEME_MUTED, THEME_PAPER, THEME_LINE, THEME_ROW_ALT, THEME_RADIUS_M
 from performance.components import section_header, insight_block
 from performance.tabs.tab_plan import parse_message_content
+from shared.data import add_rate_metrics, data_is_v2, _normalize_unit_column
 
 
 # Plan 计划类型 → 显示文案（中文简写）
@@ -268,13 +269,13 @@ def render(df: pd.DataFrame, prior_df: pd.DataFrame | None = None, bu_summary: d
     st.markdown('<div class="section-subheader">BU 总览</div>', unsafe_allow_html=True)
 
     TH = f"background:#1A1A1A;color:#fff;padding:10px 12px;font-weight:700;font-size:12px;"
-    TD = f"padding:8px 12px;border-bottom:1px solid #e0e0e0;"
-    TD_EVEN = f"padding:8px 12px;border-bottom:1px solid #e0e0e0;background:{THEME_ROW_ALT};"
+    TD = f"padding:8px 12px;"
+    TD_EVEN = f"padding:8px 12px;background:{THEME_ROW_ALT};"
 
     # 注入 :target 浮层 CSS（与 BU 表同页：点 BU 名 → 屏幕中央弹出浮层，不滚动）
     st.markdown(f"""
 <style>
-.bu-link {{ color: inherit; text-decoration: none; border-bottom: 1px dashed {MCD_DARK_RED}; cursor: pointer; }}
+.bu-link {{ color: inherit; text-decoration: none; cursor: pointer; }}
 .bu-link:hover {{ background: #F5F5F5; color: {MCD_RED} !important; }}
 .bu-pop {{ display: none; position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,.35); align-items: center; justify-content: center; }}
 .bu-pop:target {{ display: flex; }}
@@ -339,7 +340,7 @@ def render(df: pd.DataFrame, prior_df: pd.DataFrame | None = None, bu_summary: d
             f'<div id="bu-pop-{bu_name}" class="bu-pop">'
             f'<div class="bu-pop-card">'
             f'<div class="pop-head">'
-            f'<div style="font-size:15px;font-weight:700;color:{MCD_DARK_RED};">📊 {bu_name} 发送明细（{len(plan_rows)} 个 Plan）</div>'
+            f'<div style="font-size:15px;font-weight:700;color:{MCD_DARK_RED};">{bu_name} 发送明细（{len(plan_rows)} 个 Plan）</div>'
             f'<a href="#bu-table-top" class="pop-close" title="关闭">✕</a>'
             f'</div>'
             + _render_plan_rows_html(plan_rows) +
@@ -391,32 +392,30 @@ def _aggregate_bu_plans(bu_df: pd.DataFrame) -> list:
         agg_dict["渠道"] = lambda s: _format_channels(s.tolist())
 
     # 聚合键：新数据 (Plan, Message)，旧数据退化 (Plan)
-    has_message = "Message ID" in bu_df.columns and bu_df["Message ID"].notna().any()
+    has_message = data_is_v2(bu_df)
     if has_message:
         keys = ["Plan ID", "Message ID"]
-        # Unit 数：nunique，忽略 NaN 和 "[NULL]" 占位符
-        if "Unit ID" in bu_df.columns:
-            agg_dict["Unit ID"] = lambda s: s.dropna().loc[lambda x: ~x.astype(str).isin(("[NULL]", ""))].nunique()
+        # 预归一化 Unit ID（"[NULL]" / "" → NaN），groupby 后单独算 nunique + merge
+        _normalize_unit_column(bu_df)
     else:
         keys = ["Plan ID"]
 
     plan_agg = bu_df.groupby(keys, dropna=False, as_index=False).agg(agg_dict)
-    # rename Unit ID -> Unit数（仅新数据加过这列）
-    if has_message and "Unit ID" in plan_agg.columns:
-        plan_agg = plan_agg.rename(columns={"Unit ID": "Unit数"})
-    parsed = plan_agg["消息内容"].apply(parse_message_content)
-    plan_agg["消息标题"] = parsed.apply(lambda x: x[0])
-    plan_agg["消息内容"] = parsed.apply(lambda x: x[1])
-    # 聚合后必须先求和再算率
-    plan_agg["CTR"] = plan_agg.apply(
-        lambda r: r["点击人次"] / r["触达成功"] * 100 if r["触达成功"] > 0 else 0,
-        axis=1,
-    )
-    return plan_agg.sort_values("CTR", ascending=False).reset_index(drop=True).to_dict("records")
+    # Unit数：单独算（nunique _unit_norm）+ left merge
+    if has_message:
+        unit_n = bu_df.groupby(keys, dropna=False)["_unit_norm"].nunique().reset_index(name="Unit数")
+        plan_agg = plan_agg.merge(unit_n, on=keys, how="left")
+    parsed = plan_agg["消息内容"].map(parse_message_content)
+    titles, bodies = zip(*parsed)
+    plan_agg["消息标题"] = list(titles)
+    plan_agg["消息内容"] = list(bodies)
+    # 聚合后必须先求和再算率（CTR），同 tab_plan._aggregate_plans 用 add_rate_metrics
+    add_rate_metrics(plan_agg)
+    return plan_agg.sort_values("CTR", ascending=False).to_dict("records")
 
 
 def _render_plan_rows_html(plan_rows: list) -> str:
-    """单 BU 的 Plan 明细子表 HTML（嵌进浮层）。7 列 + 表头：标题 / 计划类型 / 渠道 / 正文 / 触达 / 点击 / CTR。
+    """单 BU 的 Plan 明细子表 HTML（嵌进浮层）。9 列 + 表头：Plan ID / Message ID / 标题 / 计划类型 / 渠道 / 正文 / 触达 / 点击 / CTR。
     标题与正文完整展示，不截断。"""
     if not plan_rows:
         return '<div style="padding:10px 16px;color:#999;font-size:12px;">本周无发送</div>'
@@ -426,30 +425,38 @@ def _render_plan_rows_html(plan_rows: list) -> str:
         text = str(row.get("消息内容") or "—")
         plan_type = str(row.get("计划类型") or "—")
         channel = str(row.get("渠道") or "—")
+        plan_id = str(row.get("Plan ID") or "—")
+        # Message ID：新数据才有，旧数据退化时为 None，显示 "—"
+        msg_id_raw = row.get("Message ID")
+        msg_id = str(msg_id_raw).strip() if msg_id_raw and not pd.isna(msg_id_raw) else "—"
         reach = int(row.get("触达成功", 0) or 0)
         clicks = int(row.get("点击人次", 0) or 0)
         ctr = row.get("CTR", 0) or 0
         rows_html += (
             f'<tr>'
-            f'<td style="padding:6px 8px;border-bottom:1px solid {THEME_LINE};color:{THEME_INK2};white-space:nowrap;">{channel}</td>'
-            f'<td style="padding:6px 8px;border-bottom:1px solid {THEME_LINE};color:{THEME_INK2};white-space:nowrap;">{plan_type}</td>'
-            f'<td style="padding:6px 8px;border-bottom:1px solid {THEME_LINE};font-weight:600;word-break:break-word;white-space:pre-wrap;">{title}</td>'
-            f'<td style="padding:6px 8px;border-bottom:1px solid {THEME_LINE};color:{THEME_INK2};word-break:break-word;white-space:pre-wrap;">{text}</td>'
-            f'<td style="padding:6px 8px;border-bottom:1px solid {THEME_LINE};text-align:right;">{reach:,}</td>'
-            f'<td style="padding:6px 8px;border-bottom:1px solid {THEME_LINE};text-align:right;">{clicks:,}</td>'
-            f'<td style="padding:6px 8px;border-bottom:1px solid {THEME_LINE};text-align:right;font-weight:700;">{ctr:.2f}%</td>'
+            f'<td style="padding:6px 8px;color:{THEME_INK};font-size:11px;white-space:nowrap;">{plan_id}</td>'
+            f'<td style="padding:6px 8px;color:{THEME_INK};font-size:11px;white-space:nowrap;">{msg_id}</td>'
+            f'<td style="padding:6px 8px;color:{THEME_INK};white-space:nowrap;">{channel}</td>'
+            f'<td style="padding:6px 8px;color:{THEME_INK};white-space:nowrap;">{plan_type}</td>'
+            f'<td style="padding:6px 8px;color:{THEME_INK};word-break:break-word;white-space:pre-wrap;">{title}</td>'
+            f'<td style="padding:6px 8px;color:{THEME_INK};word-break:break-word;white-space:pre-wrap;">{text}</td>'
+            f'<td style="padding:6px 8px;color:{THEME_INK};text-align:right;">{reach:,}</td>'
+            f'<td style="padding:6px 8px;color:{THEME_INK};text-align:right;">{clicks:,}</td>'
+            f'<td style="padding:6px 8px;color:{THEME_INK};text-align:right;font-weight:700;">{ctr:.2f}%</td>'
             f'</tr>'
         )
     return (
         f'<table class="bu-plan-table" style="width:100%;margin:8px 0 4px;font-size:12px;border-collapse:collapse;table-layout:auto;">'
         f'<thead><tr style="background:#F5F5F5;">'
-        f'<th style="text-align:left;padding:6px 8px;border-bottom:1px solid {THEME_LINE};">渠道</th>'
-        f'<th style="text-align:left;padding:6px 8px;border-bottom:1px solid {THEME_LINE};">计划类型</th>'
-        f'<th style="text-align:left;padding:6px 8px;border-bottom:1px solid {THEME_LINE};">标题</th>'
-        f'<th style="text-align:left;padding:6px 8px;border-bottom:1px solid {THEME_LINE};">正文</th>'
-        f'<th style="text-align:right;padding:6px 8px;border-bottom:1px solid {THEME_LINE};">触达</th>'
-        f'<th style="text-align:right;padding:6px 8px;border-bottom:1px solid {THEME_LINE};">点击</th>'
-        f'<th style="text-align:right;padding:6px 8px;border-bottom:1px solid {THEME_LINE};">CTR</th>'
+        f'<th style="text-align:left;padding:6px 8px;">Plan ID</th>'
+        f'<th style="text-align:left;padding:6px 8px;">Message ID</th>'
+        f'<th style="text-align:left;padding:6px 8px;">渠道</th>'
+        f'<th style="text-align:left;padding:6px 8px;">计划类型</th>'
+        f'<th style="text-align:left;padding:6px 8px;">标题</th>'
+        f'<th style="text-align:left;padding:6px 8px;">正文</th>'
+        f'<th style="text-align:right;padding:6px 8px;">触达</th>'
+        f'<th style="text-align:right;padding:6px 8px;">点击</th>'
+        f'<th style="text-align:right;padding:6px 8px;">CTR</th>'
         f'</tr></thead>'
         f'<tbody>{rows_html}</tbody>'
         f'</table>'

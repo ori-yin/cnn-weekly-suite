@@ -10,7 +10,7 @@ from functools import partial
 
 from performance.config import API_PROVIDERS
 from performance.tabs.tab_plan import AI_CHANNELS
-from shared.data import filter_week_data
+from shared.data import add_rate_metrics, data_is_v2, filter_week_data
 from shared.header import render_header, clear_header
 from shared.footer import render_footer
 from performance.scoring import compute_scores
@@ -208,25 +208,14 @@ def render_page(raw_df, dau_df):
                     agg["订单Sales"] = "sum"
 
                 # 聚合键：新数据 (Plan, Message)，旧数据退化 (Plan)
-                if "Message ID" in ch_df.columns and ch_df["Message ID"].notna().any():
+                if data_is_v2(ch_df):
                     group_keys = ["Plan ID", "Message ID"]
                 else:
                     group_keys = ["Plan ID"]
 
                 plan_agg = ch_df.groupby(group_keys, dropna=False, as_index=False).agg(agg)
                 # 聚合后必须先求和再算率（CTR/GC转化率），避免按行先算率再平均的精度坑
-                if "触达成功" in plan_agg.columns and "点击人次" in plan_agg.columns:
-                    import numpy as _np
-                    plan_agg["CTR"] = _np.where(
-                        plan_agg["触达成功"] > 0,
-                        plan_agg["点击人次"] / plan_agg["触达成功"] * 100,
-                        0.0,
-                    )
-                    plan_agg["GC转化率"] = _np.where(
-                        plan_agg["点击人次"] > 0,
-                        plan_agg["订单GC"] / plan_agg["点击人次"] * 100,
-                        0.0,
-                    )
+                add_rate_metrics(plan_agg)
 
                 plan_agg = plan_agg[plan_agg["触达成功"] > 0]
                 if len(plan_agg) < 2:

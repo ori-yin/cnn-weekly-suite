@@ -341,7 +341,7 @@ def _get_css() -> str:
   }
 
   /* ─── BU 详情浮层（:target 触发）──── */
-  .bu-link { color: inherit; text-decoration: none; border-bottom: 1px dashed #1A1A1A; cursor: pointer; }
+  .bu-link { color: inherit; text-decoration: none; cursor: pointer; }
   .bu-link:hover { background: #F5F5F5; color: #DB0005 !important; }
   .bu-pop { display: none; position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,.35); align-items: center; justify-content: center; }
   .bu-pop:target { display: flex; }
@@ -351,9 +351,9 @@ def _get_css() -> str:
   .bu-pop-card .pop-close:hover { color: #DB0005; }
   /* 浮层卡片里的 Plan 子表（覆盖通用 th 的白字规则） */
   .bu-plan-table { width: 100%; font-size: 12px; border-collapse: collapse; }
-  .bu-plan-table th { background: #1A1A1A; color: #fff; font-weight: 700; padding: 8px 10px; text-align: left; border-bottom: 1px solid #E0E0E0; }
+  .bu-plan-table th { background: #1A1A1A; color: #fff; font-weight: 700; padding: 8px 10px; text-align: left; }
   .bu-plan-table th.right { text-align: right; }
-  .bu-plan-table td { padding: 6px 8px; border-bottom: 1px solid #E0E0E0; color: #1A1A1A; }
+  .bu-plan-table td { padding: 6px 8px; color: #1A1A1A; }
   .bu-plan-table td.right { text-align: right; }
 
   /* ─── 页脚（部门版权深色条）─── */
