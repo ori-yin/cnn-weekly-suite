@@ -335,11 +335,15 @@ def _render_plan_cards(top_n: pd.DataFrame, ch: str, dim_id: str = "score", ai_r
         with st.container(border=True):
             st.markdown('<div class="section-subheader" style="margin:0 0 10px 0;">高分文案</div>', unsafe_allow_html=True)
             for i, (_, row) in enumerate(top3.iterrows(), 1):
-                ai_key = f"{row['Plan ID']}_{ch}_{dim_id}_top"
+                # 新数据（≥7/28 带 Message ID）key 跟 page.py:_build_items 对齐：PlanID_MsgID_ch_dim_tier
+                msg_id = str(row.get("Message ID", "")).strip() if "Message ID" in row.index else ""
+                key_pid = f"{row['Plan ID']}_{msg_id}" if msg_id else str(row["Plan ID"])
+                ai_key = f"{key_pid}_{ch}_{dim_id}_top"
                 ai = ai_results.get(ai_key) if ai_results else None
                 plan_id = row['Plan ID']
                 st.markdown(_plan_card_html(row, i, is_good=True, ai_result=ai), unsafe_allow_html=True)
-                if st.button("移除", key=f"del_top_{plan_id}_{ch}_{dim_id}", help="移除此Plan"):
+                # 删除按钮 key 跟 ai_key 同步带 msg_id，一 Plan 多文案时 key 不冲突
+                if st.button("移除", key=f"del_top_{key_pid}_{ch}_{dim_id}", help="移除此Plan"):
                     st.session_state["deleted_plans"].add(plan_id)
                     _purge_plan_ai(plan_id)
                     st.rerun()
@@ -348,11 +352,15 @@ def _render_plan_cards(top_n: pd.DataFrame, ch: str, dim_id: str = "score", ai_r
         with st.container(border=True):
             st.markdown('<div class="section-subheader" style="margin:0 0 10px 0;">需提升</div>', unsafe_allow_html=True)
             for i, (_, row) in enumerate(bot3.iterrows(), 1):
-                ai_key = f"{row['Plan ID']}_{ch}_{dim_id}_bot"
+                # 新数据 key 跟 page.py:_build_items 对齐：PlanID_MsgID_ch_dim_tier
+                msg_id = str(row.get("Message ID", "")).strip() if "Message ID" in row.index else ""
+                key_pid = f"{row['Plan ID']}_{msg_id}" if msg_id else str(row["Plan ID"])
+                ai_key = f"{key_pid}_{ch}_{dim_id}_bot"
                 ai = ai_results.get(ai_key) if ai_results else None
                 plan_id = row['Plan ID']
                 st.markdown(_plan_card_html(row, i, is_good=False, ai_result=ai), unsafe_allow_html=True)
-                if st.button("移除", key=f"del_bot_{plan_id}_{ch}_{dim_id}", help="移除此Plan"):
+                # 删除按钮 key 跟 ai_key 同步带 msg_id，一 Plan 多文案时 key 不冲突
+                if st.button("移除", key=f"del_bot_{key_pid}_{ch}_{dim_id}", help="移除此Plan"):
                     st.session_state["deleted_plans"].add(plan_id)
                     _purge_plan_ai(plan_id)
                     st.rerun()
@@ -385,7 +393,10 @@ def _export_plan_cards(top_n: pd.DataFrame, ch: str, dim_id: str = "score", ai_r
         )
         tier = "top" if is_good else "bot"
         for i, (_, row) in enumerate(rows.iterrows(), 1):
-            ai_key = f"{row['Plan ID']}_{ch}_{dim_id}_{tier}"
+            # 新数据 key 跟 page.py:_build_items 对齐：PlanID_MsgID_ch_dim_tier
+            msg_id = str(row.get("Message ID", "")).strip() if "Message ID" in row.index else ""
+            key_pid = f"{row['Plan ID']}_{msg_id}" if msg_id else str(row["Plan ID"])
+            ai_key = f"{key_pid}_{ch}_{dim_id}_{tier}"
             ai = ai_results.get(ai_key) if ai_results else None
             html += _plan_card_html(row, i, is_good=is_good, ai_result=ai)
         html += '</div>'
