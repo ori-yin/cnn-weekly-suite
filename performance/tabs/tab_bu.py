@@ -7,6 +7,7 @@ import streamlit as st
 import pandas as pd
 from performance.config import MCD_DARK_RED, MCD_RED, MCD_GREEN, THEME_INK, THEME_INK2, THEME_MUTED, THEME_PAPER, THEME_LINE, THEME_ROW_ALT, THEME_RADIUS_M
 from performance.components import section_header, insight_block
+from performance.scoring import compute_scores
 from performance.tabs.tab_plan import parse_message_content
 from shared.data import add_rate_metrics, data_is_v2, _normalize_unit_column
 
@@ -411,11 +412,13 @@ def _aggregate_bu_plans(bu_df: pd.DataFrame) -> list:
     plan_agg["消息内容"] = list(bodies)
     # 聚合后必须先求和再算率（CTR），同 tab_plan._aggregate_plans 用 add_rate_metrics
     add_rate_metrics(plan_agg)
+    # Plan×Message 级综合评分（与内容分析同算法），浮层表格用
+    plan_agg = compute_scores(plan_agg)
     return plan_agg.sort_values("CTR", ascending=False).to_dict("records")
 
 
 def _render_plan_rows_html(plan_rows: list) -> str:
-    """单 BU 的 Plan 明细子表 HTML（嵌进浮层）。9 列 + 表头：Plan ID / Message ID / 标题 / 计划类型 / 渠道 / 正文 / 触达 / 点击 / CTR。
+    """单 BU 的 Plan 明细子表 HTML（嵌进浮层）。13 列 + 表头：Plan ID / Message ID / 渠道 / 计划类型 / 标题 / 正文 / 触达 / 点击 / CTR / GC / GC转化率 / Sales / 评分。
     标题与正文完整展示，不截断。"""
     if not plan_rows:
         return '<div style="padding:10px 16px;color:#999;font-size:12px;">本周无发送</div>'
@@ -432,6 +435,10 @@ def _render_plan_rows_html(plan_rows: list) -> str:
         reach = int(row.get("触达成功", 0) or 0)
         clicks = int(row.get("点击人次", 0) or 0)
         ctr = row.get("CTR", 0) or 0
+        gc = int(row.get("订单GC", 0) or 0)
+        gc_rate = row.get("GC转化率", 0) or 0
+        sales = float(row.get("订单Sales", 0) or 0)
+        score = float(row.get("综合评分", 0) or 0)
         rows_html += (
             f'<tr>'
             f'<td style="padding:6px 8px;color:{THEME_INK};font-size:11px;white-space:nowrap;">{plan_id}</td>'
@@ -443,6 +450,10 @@ def _render_plan_rows_html(plan_rows: list) -> str:
             f'<td style="padding:6px 8px;color:{THEME_INK};text-align:right;">{reach:,}</td>'
             f'<td style="padding:6px 8px;color:{THEME_INK};text-align:right;">{clicks:,}</td>'
             f'<td style="padding:6px 8px;color:{THEME_INK};text-align:right;font-weight:700;">{ctr:.2f}%</td>'
+            f'<td style="padding:6px 8px;color:{THEME_INK};text-align:right;">{gc:,}</td>'
+            f'<td style="padding:6px 8px;color:{THEME_INK};text-align:right;">{gc_rate:.1f}%</td>'
+            f'<td style="padding:6px 8px;color:{THEME_INK};text-align:right;">{sales:,.2f}</td>'
+            f'<td style="padding:6px 8px;color:{MCD_RED};text-align:right;font-weight:700;">{score:.1f}</td>'
             f'</tr>'
         )
     return (
@@ -457,6 +468,10 @@ def _render_plan_rows_html(plan_rows: list) -> str:
         f'<th style="text-align:right;padding:6px 8px;">触达</th>'
         f'<th style="text-align:right;padding:6px 8px;">点击</th>'
         f'<th style="text-align:right;padding:6px 8px;">CTR</th>'
+        f'<th style="text-align:right;padding:6px 8px;">订单GC</th>'
+        f'<th style="text-align:right;padding:6px 8px;">GC转化率</th>'
+        f'<th style="text-align:right;padding:6px 8px;">订单Sales</th>'
+        f'<th style="text-align:right;padding:6px 8px;">评分</th>'
         f'</tr></thead>'
         f'<tbody>{rows_html}</tbody>'
         f'</table>'
