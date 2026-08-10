@@ -272,12 +272,22 @@ git reset --hard 34e1882             # emergency 导出修复后
 ## 13. 当前最新 commit
 
 ```
-4bc43f0 refactor: /simplify 渠道健康度去重 + 内容分析标签对齐  ← HEAD（最新）
+1158080 feat(bu): 浮层明细加 GC/GC转化率/Sales/评分 4 列  ← HEAD（最新，见 §18）
+e12add5 fix(plan): AI 解读 key 与删除按钮 key 同步带 Message ID
+3049305 refactor(simplify): 抽 data_is_v2/add_rate_metrics/_normalize_unit_column 三个 helper 到 shared/data.py
+35ba9fd feat: 数据列变更适配(15->17列)+ 内容级聚合(Plan x Message)
+0dea3b6 docs: README - document DAU sheet 3-col (date/channel/DAU) format
+9405b27 feat: read_dau_sheet supports 3-col (date/channel/DAU) format
+4bc43f0 refactor: /simplify 渠道健康度去重 + 内容分析标签对齐
 53703e6 迭代文案 & 渠道健康度
 7dd8424 docs: 更新 HANDOFF，记录今日 AI 解读迭代
 6e1a0a9 feat: AI 解读全面优化 + HTML 导出体验提升
 ```
 
+- `1158080` = §18 BU 浮层明细 13 列（9→13）。
+- `e12add5` = `tab_plan.py` AI key + 删除按钮 key 同步带 Message ID。
+- `3049305` = 抽三个 helper 到 `shared/data.py`，避免 tab_bu/tab_plan 各写一份。
+- `35ba9fd` = §17 数据列变更（15→17 列）+ 内容级聚合 (Plan × Message)。
 - `4bc43f0` = §14.1 的 /simplify 清理（已提交）。
 - `53703e6` = 渠道健康度 5 档 band + 基期改内部从 raw_df 派生 + 文案改「内容分析/实验专题」。
 - `6e1a0a9` = §8.15-17（AI 修复 + UI 精简 + HTML 导出优化）。
@@ -373,6 +383,10 @@ Mac 的 `a2bbcc4` 是 root commit，**只推了 7 个 emergency 文件**（day_t
 
 ### 15.4 剩余待办（合并自两份 HANDOFF）
 
+> 已落地：`scoring.py:32` 置信度惩罚修复（`a2bbcc4`）、`page.py` rerun 移除（`0d5df68`）、`llm_service.py:248` `[default]*n` 修复（`a2bbcc4`）、`data.py:170` 单列 sheet 保护（`0d5df68`）、10 处死代码清理（`a2bbcc4`）、`tab_bu.py` 4 列扩到 13 列（`1158080`）。
+>
+> 未做（仍待办，按优先级）：
+
 - `performance/tabs/tab_plan.py` 三端选牌逻辑去重（`select_top_bot(plan_agg, dim_id)`，最高价值）
 - `performance/export.py` 的 `df` / `channel_summary` orphan 参数（Mac 已清，但公司电脑原 HANDOFF 也有这条）
 - `shared/data.py` fuzzy 列名「已分配」去重（潜伏）
@@ -390,21 +404,30 @@ Mac 的 `a2bbcc4` 是 root commit，**只推了 7 个 emergency 文件**（day_t
 
 ---
 
-## 16. 2026-07-16 状态（明天接手）
+## 16. 2026-08-10 状态（已解决）
 
-**已改（本地，未 commit/push）**
+> §16 原 2026-07-16 写的「本地未 push + token 失效」问题，**已自然解决**。当时以为是 token 失效，其实是 git credential 缓存命中（也可能是 PAT 自动续期）。本地累积的所有改动（44 文件 + `parse_message_content` 对齐）都已推到 origin/main。当前远端 HEAD = `1158080`，本地 working tree clean。
+
+**已推 commits（按时间）**
+
+| commit | 内容 |
+|---|---|
+| `3049305` | refactor(simplify): 抽 data_is_v2/add_rate_metrics/_normalize_unit_column 三个 helper 到 shared/data.py |
+| `35ba9fd` | feat: 数据列变更适配(15→17列) + 内容级聚合(Plan × Message) |
+| `0dea3b6` | docs: README - document DAU sheet 3-col (date/channel/DAU) format |
+| `9405b27` | feat: read_dau_sheet supports 3-col (date/channel/DAU) format |
+| `e12add5` | fix(plan): AI 解读 key 与删除按钮 key 同步带 Message ID |
+| `1158080` | feat(bu): 浮层明细加 GC/GC转化率/Sales/评分 4 列 |
+
+**已对齐 mcd-content-rank**
+
 - `performance/tabs/tab_plan.py:41-79` `parse_message_content` 对齐 `mcd-content-rank/data_cleaning.py:141-182`：拆出 `_extract_title_from_forms` 三级 fallback + `_extract_text_from_forms` 二级 fallback；标题新增 `attachments[0]["name"]` 兜底；换行清洗补 `\r`；新增 `strip_question_marks=False` 参数（CSV 路径清理 GBK `??`）。返回 `(title, text)` 元组，3 个调用方（`tab_plan:415`、`tab_bu:350`、`page:148`）零改动。11/11 回归测试通过。
 
-**已知差异（本地 vs GitHub @5ea6dbe）**
-- 本地比 GitHub main 新 5 天，44 个源文件全部变更（`shared/*`、`performance/*`、`emergency/*`、配置 + 文档）。本地是更新版。
-- 性能优化在本地：`shared/data.py`、`performance/scoring.py`、`channel_health.py`、`llm_service.py` 都改过。
+**token / 同步现状**
 
-**明天 push（卡在 token）**
-1. `.git/` 已 init，remote = `https://github.com/ori-yin/cnn-weekly-suite.git`
-2. token `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` **已失效**（API 401 Bad credentials）。memory 里 43 天了。
-3. 选项 A（推荐）：明天生成新 PAT 贴回来，权限 `Contents: Read & write` 只给本仓库，让我接着跑 `git add . && git commit -m "feat: 本地 7/15 累计更新（44 文件）" && git push -u origin main`
-4. 选项 B：你手动跑上面那行 git 命令
-5. **风险**：本目录是 OneDrive ReparsePoint，git + OneDrive 同步 `.git/` 时可能锁文件打架。建议把仓库物理移到 `C:\Projects\cnn-weekly-suite` 再 push。更稳。
+- `.git/` 已 init，remote = `https://github.com/ori-yin/cnn-weekly-suite.git`
+- token `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` **仍有效**（API 401 假警报，git credential 缓存命中能正常 push）
+- OneDrive ReparsePoint 同步 `.git/` 暂未观察到锁文件打架，但 git 操作时如报 `.git/index.lock` 不消失可临时关 OneDrive 再跑。
 
 ---
 
@@ -456,3 +479,23 @@ Mac 的 `a2bbcc4` 是 root commit，**只推了 7 个 emergency 文件**（day_t
 
 - emergency 模块**未同步**（B 方案不含）。如需要后续：emergency 各 section 加 Unit数量 KPI 即可，核心聚合（按 发送日期×计划类型/渠道）不受影响
 - 评分算法阈值未针对新数据分布重算（Q3 校准待做）
+
+---
+
+## 18. 2026-08-10 BU 浮层明细 9 列 → 13 列
+
+**业务诉求**：BU 总览点 BU 名弹出浮层后，只能看发送明细（Plan×Message），看不到 GC、GC转化率、Sales、评分，看不出这条文案值不值。补这 4 列。
+
+**改动**（commit `1158080`，1 文件 +16/-1）
+
+| 位置 | 改动 |
+|---|---|
+| `performance/tabs/tab_bu.py:11` | 加 `from performance.scoring import compute_scores` |
+| `performance/tabs/tab_bu.py::_aggregate_bu_plans` | `add_rate_metrics(plan_agg)` 后调 `compute_scores(plan_agg)`，产出 Plan×Message 级「综合评分」列 |
+| `performance/tabs/tab_bu.py::_render_plan_rows_html` | 表头 + 行数据加 4 列（订单GC / GC转化率 / 订单Sales / 评分），「评分」用 MCD_RED 加粗；9 列 → 13 列；docstring 同步 |
+
+**评分含义**：用 Plan×Message 粒度算（与「内容分析」tab 同 `scoring.compute_scores`），**不是 BU 整体评分**。看的是「这条文案值多少分」。
+
+**导出 HTML 同步**：`page.py:405` `tables["bu"] = bu_table_html` 直接复用 `render_bu()` 返回值（已含 popover 浮层 HTML），无需改 `export.py`，导出报告自动含 13 列。
+
+**兼容性**：`compute_scores` 输入列 `渠道/触达成功/点击人次/订单GC` + `add_rate_metrics` 后的 `CTR/GC转化率` BU 浮层聚合已全部具备；`data_is_v2` 自动适配新旧数据（新数据按 `(Plan, Message)` 聚合，旧数据退化按 `Plan`）。
