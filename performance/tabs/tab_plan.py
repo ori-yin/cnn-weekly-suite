@@ -25,6 +25,41 @@ _AI_DIMS = ("score", "ctr", "sales")
 _AI_TIERS = ("top", "bot")
 
 
+# ─── 内容分析排除规则（仅影响第4部分，不干预其他 section）──────────
+# 匹配规则：Plan名称 OR 消息标题 任一字段包含任一关键词 → 剔除（不区分大小写）
+# 设计意图：礼品卡 / 入群礼 / 团餐 这类文案不适合做营销内容分析
+#   - 「礼品卡」：过期提醒、权益通知等纯服务型文案
+#   - 「入群礼」：群裂变场景的钩子文案
+#   - 「团餐」：B 端场景，CTA 与 C 端营销差异大
+# 调用方：
+#   - tab_plan.render() 在解析消息内容后立即过滤（影响 UI 卡片 + 导出 HTML）
+#   - page.py AI handler 在 df_ai.copy() 后立即过滤（影响 LLM 入参）
+_CONTENT_EXCLUDE_KWS = ("礼品卡", "入群礼", "团餐")
+
+
+def _content_exclusion_mask(df: pd.DataFrame) -> pd.Series:
+    """返回 True 表示该行应该被排除（命中 Plan名称 或 消息标题 任一关键词）。
+
+    空 df 或关键词列表为空 → 全 False（不过滤）。下游用 df[~mask] 拿保留行。
+    """
+    if df.empty or not _CONTENT_EXCLUDE_KWS:
+        return pd.Series(False, index=df.index)
+
+    parts = []
+    if "Plan名称" in df.columns:
+        parts.append(df["Plan名称"].astype(str).fillna(""))
+    if "消息标题" in df.columns:
+        parts.append(df["消息标题"].astype(str).fillna(""))
+    if not parts:
+        return pd.Series(False, index=df.index)
+
+    text = parts[0]
+    for p in parts[1:]:
+        text = text.str.cat(p, sep=" ")
+    pattern = "|".join(re.escape(k) for k in _CONTENT_EXCLUDE_KWS)
+    return text.str.contains(pattern, case=False, na=False)
+
+
 def _purge_plan_ai(plan_id: str):
     """从 ai_results 移除某 Plan 的所有 (channel, dim, tier) key。
 
@@ -513,6 +548,19 @@ def render(df: pd.DataFrame, ai_results: dict = None, channel_summary: dict = No
         df = df.copy()
         df["消息标题"] = ""
         df["消息内容"] = ""
+
+    # ─── 第4部分排除规则（仅影响内容分析，不干预其他 section）────────
+    # 调用方已在 page.py 把全量 df 传进来；这里就地 copy + mask 过滤，
+    # 不影响 render_summary / render_operational / render_bu 的入参
+    if _CONTENT_EXCLUDE_KWS:
+        excl_mask = _content_exclusion_mask(df)
+        n_excluded = int(excl_mask.sum())
+        if n_excluded:
+            df = df[~excl_mask].copy()
+            st.caption(
+                f"已按内容分析排除规则剔除 {n_excluded} 条 Plan"
+                f"（礼品卡 / 入群礼 / 团餐，不影响其他板块）"
+            )
 
     # 检测可用渠道（至少 2 条 Plan）
     available_channels = []

@@ -150,6 +150,14 @@ def render_page(raw_df, dau_df):
                 df_ai["消息标题"] = parsed.apply(lambda x: x[0])
                 df_ai["消息内容_parsed"] = parsed.apply(lambda x: x[1])
 
+            # ─── 第4部分排除规则（仅影响内容分析 AI 入参）──────────────
+            # 与 tab_plan.render() 共用同一函数，保证 UI 卡片与 LLM 入参口径一致
+            from performance.tabs.tab_plan import _content_exclusion_mask, _CONTENT_EXCLUDE_KWS
+            if _CONTENT_EXCLUDE_KWS:
+                _ai_excl = _content_exclusion_mask(df_ai)
+                if _ai_excl.any():
+                    df_ai = df_ai[~_ai_excl].copy()
+
             ai_results = st.session_state.get("ai_results", {})
             channel_summary = st.session_state.get("channel_summary", {})
 
