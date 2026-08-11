@@ -27,14 +27,15 @@ _AI_TIERS = ("top", "bot")
 
 # ─── 内容分析排除规则（仅影响第4部分，不干预其他 section）──────────
 # 匹配规则：Plan名称 OR 消息标题 任一字段包含任一关键词 → 剔除（不区分大小写）
-# 设计意图：礼品卡 / 入群礼 / 团餐 这类文案不适合做营销内容分析
+# 设计意图：礼品卡 / 入群礼 / 团餐 / BF用卡系列 这类文案不适合做营销内容分析
 #   - 「礼品卡」：过期提醒、权益通知等纯服务型文案
 #   - 「入群礼」：群裂变场景的钩子文案
 #   - 「团餐」：B 端场景，CTA 与 C 端营销差异大
+#   - 「BF用卡 / BF开卡 / BF续卡」：BF（早餐）卡券服务类通知
 # 调用方：
 #   - tab_plan.render() 在解析消息内容后立即过滤（影响 UI 卡片 + 导出 HTML）
 #   - page.py AI handler 在 df_ai.copy() 后立即过滤（影响 LLM 入参）
-_CONTENT_EXCLUDE_KWS = ("礼品卡", "入群礼", "团餐")
+_CONTENT_EXCLUDE_KWS = ("礼品卡", "入群礼", "团餐", "BF用卡", "BF开卡", "BF续卡")
 
 
 def _content_exclusion_mask(df: pd.DataFrame) -> pd.Series:
@@ -58,6 +59,61 @@ def _content_exclusion_mask(df: pd.DataFrame) -> pd.Series:
         text = text.str.cat(p, sep=" ")
     pattern = "|".join(re.escape(k) for k in _CONTENT_EXCLUDE_KWS)
     return text.str.contains(pattern, case=False, na=False)
+
+
+# ─── 互斥榜单规则（仅影响第4部分 top/bot 选取）────────────────────
+# 设计意图：解决「同一批 Plan 在 3 个维度都霸榜」问题
+#   - 一个 Plan ID 最多出现在 6 个榜单（3 维 × 2 层）中的 1 个
+#   - CTR 榜单额外要求 触达成功 ≥ CTR_MIN_REACH（小样本 CTR 不可信）
+# 维度顺序敏感：综合 → CTR → Sales
+#   综合：无排除；CTR：排除综合 top+bot；Sales：排除综合+CTR top+bot
+CTR_MIN_REACH = 10000
+DIM_SPECS = [
+    ("score", "综合评分", None),
+    ("ctr", "CTR", CTR_MIN_REACH),
+    ("sales", "订单Sales", None),
+]
+
+
+def _picks_exclusive(plan_agg: pd.DataFrame, dim_specs=DIM_SPECS) -> dict:
+    """按 dim_specs 顺序给每个维度挑 top3 + bot3，保证 Plan ID 互斥。
+
+    Returns:
+        {dim_id: {"top": DataFrame, "bot": DataFrame}}，top/bot 列与 plan_agg 一致
+    """
+    empty_picks = {d: {"top": pd.DataFrame(), "bot": pd.DataFrame()} for d, _, _ in dim_specs}
+    if plan_agg is None or plan_agg.empty:
+        return empty_picks
+
+    used: set = set()
+    out: dict = {}
+    for dim_id, sort_col, min_reach in dim_specs:
+        pool = plan_agg
+        # 1) 阈值过滤（CTR 才有）
+        if min_reach is not None and "触达成功" in pool.columns:
+            pool = pool[pool["触达成功"] >= min_reach]
+        # 2) 排除已用 Plan（互斥核心）
+        pool = pool[~pool["Plan ID"].isin(used)]
+
+        # 排序键：sort_col + Plan ID (+ Message ID 新数据) tie-breaker
+        eff_sort = sort_col if sort_col in pool.columns else "综合评分"
+        sort_keys = [eff_sort, "Plan ID"]
+        sort_asc_top = [False, True]
+        if "Message ID" in pool.columns:
+            sort_keys.append("Message ID")
+            sort_asc_top.append(True)
+
+        # 3) top 3（desc）
+        top3 = pool.sort_values(sort_keys, ascending=sort_asc_top, na_position="last").head(3).reset_index(drop=True)
+        # 4) bot 3（asc，排除 top3 pids）
+        bot_pool = pool[~pool["Plan ID"].isin(set(top3["Plan ID"]))]
+        bot_sort_asc = [True, True] + ([True] if "Message ID" in pool.columns else [])
+        bot3 = bot_pool.sort_values(sort_keys, ascending=bot_sort_asc, na_position="last").head(3).reset_index(drop=True)
+
+        out[dim_id] = {"top": top3, "bot": bot3}
+        used.update(top3["Plan ID"].tolist())
+        used.update(bot3["Plan ID"].tolist())
+    return out
 
 
 def _purge_plan_ai(plan_id: str):
@@ -332,30 +388,16 @@ def _aggregate_plans(ch_df: pd.DataFrame) -> pd.DataFrame:
     return add_rate_metrics(plan_agg)
 
 
-def _render_plan_cards(top_n: pd.DataFrame, ch: str, dim_id: str = "score", ai_results: dict = None):
-    """Streamlit 渲染 6 卡片（左 3 高分，右 3 需提升），支持删除"""
+def _render_plan_cards(top3: pd.DataFrame, bot3: pd.DataFrame, ch: str, dim_id: str = "score", ai_results: dict = None):
+    """Streamlit 渲染 6 卡片（左 3 高分，右 3 需提升），支持删除。
+
+    top3 / bot3 由 caller（render()）通过 _picks_exclusive 预先算好，
+    已应用：① 互斥规则（一个 Plan 最多出现 1 个榜单）② CTR 触达阈值
+    ③ deleted_plans 过滤。本函数只负责渲染。
+    """
     # 初始化删除列表
     if "deleted_plans" not in st.session_state:
         st.session_state["deleted_plans"] = set()
-
-    # 过滤掉被删除的Plan
-    deleted = st.session_state["deleted_plans"]
-    filtered = top_n[~top_n["Plan ID"].isin(deleted)]
-
-    # 高分 3 张（top_n 已经按当前维度 desc 排好序）
-    top3 = filtered.head(3).reset_index(drop=True)
-
-    # 需提升 3 张：先排除 top3 的 Plan ID，再从剩余池里按升序取前 3
-    # 避免渠道 Plan 数 ≤ 6 时 bot3 与 top3 完全重叠
-    # 二级 tie-break by "Plan ID" asc，与 handler 算 AI、_render_plan_cards、_export_channel_tabs 三端完全一致
-    sort_col_map = {"score": "综合评分", "ctr": "CTR", "sales": "订单Sales"}
-    sort_col = sort_col_map.get(dim_id, "综合评分")
-    top_plan_ids = set(top3["Plan ID"])
-    bot_pool = filtered[~filtered["Plan ID"].isin(top_plan_ids)]
-    if sort_col in bot_pool.columns:
-        bot3 = bot_pool.sort_values([sort_col, "Plan ID"], ascending=[True, True], na_position="last").head(3).reset_index(drop=True)
-    else:
-        bot3 = bot_pool.sort_values("Plan ID", ascending=True).head(3).reset_index(drop=True)
 
     if len(top3) == 0 and len(bot3) == 0:
         st.info("当前渠道没有可显示的 Plan")
@@ -401,23 +443,12 @@ def _render_plan_cards(top_n: pd.DataFrame, ch: str, dim_id: str = "score", ai_r
                     st.rerun()
 
 
-def _export_plan_cards(top_n: pd.DataFrame, ch: str, dim_id: str = "score", ai_results: dict = None) -> str:
-    """导出 HTML：6 卡片（左 3 高分，右 3 需提升），过滤掉被删除的Plan"""
-    # 过滤掉被删除的Plan
-    deleted = st.session_state.get("deleted_plans", set())
-    filtered = top_n[~top_n["Plan ID"].isin(deleted)]
+def _export_plan_cards(top3: pd.DataFrame, bot3: pd.DataFrame, ch: str, dim_id: str = "score", ai_results: dict = None) -> str:
+    """导出 HTML：6 卡片（左 3 高分，右 3 需提升）。
 
-    top3 = filtered.head(3).reset_index(drop=True)
-    sort_col_map = {"score": "综合评分", "ctr": "CTR", "sales": "订单Sales"}
-    sort_col = sort_col_map.get(dim_id, "综合评分")
-    # 与 handler 算 AI、_render_plan_cards 三端完全一致：bot3 从排除 top3 后的池里取
-    top_plan_ids = set(top3["Plan ID"])
-    bot_pool = filtered[~filtered["Plan ID"].isin(top_plan_ids)]
-    if sort_col in bot_pool.columns:
-        bot3 = bot_pool.sort_values([sort_col, "Plan ID"], ascending=[True, True], na_position="last").head(3).reset_index(drop=True)
-    else:
-        bot3 = bot_pool.sort_values("Plan ID", ascending=True).head(3).reset_index(drop=True)
-
+    top3 / bot3 由 caller（render() → _export_channel_tabs）通过 _picks_exclusive
+    预先算好，已应用互斥 + CTR 阈值。本函数只负责 HTML 渲染。
+    """
     def _column(rows, label, is_good):
         # 套框：与 UI 一致的轻量卡片样式（border + 背景 + 圆角）
         html = (
@@ -444,8 +475,8 @@ def _export_plan_cards(top_n: pd.DataFrame, ch: str, dim_id: str = "score", ai_r
     return html
 
 
-def _export_channel_tabs(ch: str, plan_agg: pd.DataFrame, ai_results: dict = None, ch_summary: dict = None) -> str:
-    """导出 HTML：单个渠道的 3 个维度 tab 切换"""
+def _export_channel_tabs(ch: str, picks: dict, ai_results: dict = None, ch_summary: dict = None) -> str:
+    """导出 HTML：单个渠道的 3 个维度 tab 切换。picks 来自 _picks_exclusive。"""
     prefix = ch.replace(" ", "-").replace("/", "-")
 
     # 渠道总结
@@ -479,19 +510,15 @@ def _export_channel_tabs(ch: str, plan_agg: pd.DataFrame, ai_results: dict = Non
     ]
     tabs_html = ""
     panels_html = ""
-    for idx, (dim_id, label, sort_col) in enumerate(dims):
+    for idx, (dim_id, label, _) in enumerate(dims):
         checked = "checked" if idx == 0 else ""
         tabs_html += (
             f'<input type="radio" name="dim-{prefix}" id="dim-{prefix}-{dim_id}" {checked} class="plan-dim-input">'
             f'<label for="dim-{prefix}-{dim_id}" class="plan-tab-label">{label}</label>'
         )
-        # 用完整 plan_agg（与 handler 算 AI、UI 渲染三端一致），_export_plan_cards 内部再 head(3)
-        # 二级 tie-break by "Plan ID" asc，保证与 page.py:237 同算法，避免同 Sales 值时两端 Plan ID 顺序分歧
-        if sort_col in plan_agg.columns:
-            sorted_df = plan_agg.sort_values([sort_col, "Plan ID"], ascending=[False, True]).reset_index(drop=True)
-        else:
-            sorted_df = plan_agg.sort_values(["综合评分", "Plan ID"], ascending=[False, True]).reset_index(drop=True)
-        panels_html += f'<div class="plan-dim-panel">{_export_plan_cards(sorted_df, ch, dim_id, ai_results)}</div>'
+        # picks 来自 _picks_exclusive：已应用互斥 + CTR 阈值，与 UI 卡片完全一致
+        pick = picks.get(dim_id, {"top": pd.DataFrame(), "bot": pd.DataFrame()})
+        panels_html += f'<div class="plan-dim-panel">{_export_plan_cards(pick["top"], pick["bot"], ch, dim_id, ai_results)}</div>'
     return f'{summary_html}<div class="plan-dim-tabs">{tabs_html}{panels_html}</div>'
 
 
@@ -559,7 +586,7 @@ def render(df: pd.DataFrame, ai_results: dict = None, channel_summary: dict = No
             df = df[~excl_mask].copy()
             st.caption(
                 f"已按内容分析排除规则剔除 {n_excluded} 条 Plan"
-                f"（礼品卡 / 入群礼 / 团餐，不影响其他板块）"
+                f"（礼品卡 / 入群礼 / 团餐 / BF用卡系列，不影响其他板块）"
             )
 
     # 检测可用渠道（至少 2 条 Plan）
@@ -597,25 +624,20 @@ def render(df: pd.DataFrame, ai_results: dict = None, channel_summary: dict = No
     ch_df = df[df["渠道"] == selected_ch].copy()
     plan_agg = _aggregate_plans(ch_df)
 
-    # 确定维度ID
+    # 排除用户已删除的 Plan（在 picks 之前过滤，保证 dim 间互斥口径一致）
+    deleted = st.session_state.get("deleted_plans", set())
+    if deleted:
+        plan_agg = plan_agg[~plan_agg["Plan ID"].isin(deleted)]
+
+    # 计算 3 维度互斥 picks（一个 Plan 最多出现在 1 个榜单；CTR 触达≥10000）
+    picks = _picks_exclusive(plan_agg, DIM_SPECS)
+
+    # 确定维度ID（与 DIM_SPECS 顺序对齐）
     dim_id_map = {"综合评分": "score", "CTR": "ctr", "Sales": "sales"}
     dim_id = dim_id_map.get(sort_dim, "score")
 
-    if sort_dim == "综合评分":
-        plan_agg = plan_agg.sort_values(["综合评分", "Plan ID"], ascending=[False, True])
-    elif sort_dim == "CTR":
-        plan_agg = plan_agg.sort_values(["CTR", "Plan ID"], ascending=[False, True])
-    elif sort_dim == "Sales":
-        if "订单Sales" in plan_agg.columns:
-            plan_agg = plan_agg.sort_values(["订单Sales", "Plan ID"], ascending=[False, True])
-        else:
-            plan_agg = plan_agg.sort_values(["综合评分", "Plan ID"], ascending=[False, True])
-
-    # 取完整 plan_agg 传给 render/export，确保删除后 bot3 也能从完整集合里回填
-    top_n = plan_agg.reset_index(drop=True)
-
     # ─── Streamlit 显示 ──────────────────────────────────
-    _render_plan_cards(top_n, selected_ch, dim_id, ai_results)
+    _render_plan_cards(picks[dim_id]["top"], picks[dim_id]["bot"], selected_ch, dim_id, ai_results)
 
     # ─── 导出 HTML（渠道 tab + 维度 tab，扁平结构）──────────
     plan_html = ""
@@ -624,13 +646,16 @@ def render(df: pd.DataFrame, ai_results: dict = None, channel_summary: dict = No
     for idx, ch in enumerate(available_channels):
         ch_df_exp = df[df["渠道"] == ch].copy()
         plan_agg_exp = _aggregate_plans(ch_df_exp)
+        if deleted:
+            plan_agg_exp = plan_agg_exp[~plan_agg_exp["Plan ID"].isin(deleted)]
+        picks_exp = _picks_exclusive(plan_agg_exp, DIM_SPECS)
         checked = "checked" if idx == 0 else ""
         ch_tabs += (
             f'<input type="radio" name="plan-ch" id="plan-ch-{idx}" {checked} class="plan-ch-input">'
             f'<label for="plan-ch-{idx}" class="plan-tab-label">{ch}</label>'
         )
         ch_summary = channel_summary.get(ch) if channel_summary else None
-        ch_panels += f'<div class="plan-ch-panel">{_export_channel_tabs(ch, plan_agg_exp, ai_results, ch_summary)}</div>'
+        ch_panels += f'<div class="plan-ch-panel">{_export_channel_tabs(ch, picks_exp, ai_results, ch_summary)}</div>'
     plan_html += f'<div class="plan-ch-tabs">{ch_tabs}{ch_panels}</div>'
 
     return plan_html

@@ -161,13 +161,6 @@ def render_page(raw_df, dau_df):
             ai_results = st.session_state.get("ai_results", {})
             channel_summary = st.session_state.get("channel_summary", {})
 
-            # 3个排序维度
-            DIMS = [
-                ("score", "综合评分"),
-                ("ctr", "CTR"),
-                ("sales", "订单Sales"),
-            ]
-
             # ─── 第一段：收集任务入参（不调 LLM，只算数据）──────────
             # 每项 (keys, callable)：callable 已固化所有入参（值拷贝），不受循环变量晚绑定影响
             plan_tasks = []        # [(top_keys 或 bot_keys, () -> list[结果])]
@@ -251,34 +244,21 @@ def render_page(raw_df, dau_df):
                 # 固化入参
                 summary_tasks.append((ch, partial(analyze_channel_summary, ai_api_key, ai_provider, ai_model, ch, summary_items)))
 
-                for dim_id, sort_col in DIMS:
-                    # 先按当前维度 desc 预排，二级 tie-break by "Plan ID" asc（+ Message ID 新数据），与 _export_channel_tabs 对齐
-                    # 避免同 Sales 值时 handler/UI/导出 三端 Plan ID 顺序分歧导致 AI key 对不上
-                    sort_col_eff = sort_col if sort_col in plan_agg.columns else "综合评分"
-                    sort_keys = [sort_col_eff, "Plan ID"]
-                    sort_asc = [False, True]
-                    if "Message ID" in plan_agg.columns:
-                        sort_keys.append("Message ID")
-                        sort_asc.append(True)
-                    plan_agg_sorted = plan_agg.sort_values(sort_keys, ascending=sort_asc)
+                # ─── 互斥 picks（与 UI / 导出 三端共用 _picks_exclusive）────────
+                # 一个 Plan 最多出现在 1 个榜单；CTR 触达 ≥ 10000
+                # 与 tab_plan._picks_exclusive 共用，保证 LLM 入参与 UI 卡片口径一致
+                from performance.tabs.tab_plan import _picks_exclusive, DIM_SPECS
+                picks = _picks_exclusive(plan_agg, DIM_SPECS)
 
-                    # 高分 TOP3 → Good Case（已 desc 排，直接 head(3)）
-                    dim_top = plan_agg_sorted.head(3)
+                for dim_id, _, _ in DIM_SPECS:
+                    dim_top = picks[dim_id]["top"]
+                    dim_bot = picks[dim_id]["bot"]
+                    if len(dim_top) == 0 and len(dim_bot) == 0:
+                        continue
+                    # 高分 TOP3 → Good Case
                     top_items, top_keys = _build_items(dim_top, ch, dim_id, tier="top")
                     plan_tasks.append((top_keys, partial(analyze_content, ai_api_key, ai_provider, ai_model, top_items, True, None)))
-
                     # 需提升 BOT3 → 诊断室（带 top_items 作 Good Case 参照）
-                    # 先排除 top3 的 Plan ID 再升序取前 3，避免渠道 Plan 数 ≤ 6 时与 top3 完全重叠
-                    # 二级 tie-break by "Plan ID" asc，与 UI _render_plan_cards / _export_channel_tabs 完全一致
-                    # 避免同 Sales 值时 handler/UI/导出 三端 Plan ID 顺序分歧导致 AI key 对不上
-                    top_plan_ids = set(dim_top["Plan ID"])
-                    bot_pool = plan_agg_sorted[~plan_agg_sorted["Plan ID"].isin(top_plan_ids)]
-                    bot_sort_keys = [sort_col_eff, "Plan ID"]
-                    bot_sort_asc = [True, True]
-                    if "Message ID" in bot_pool.columns:
-                        bot_sort_keys.append("Message ID")
-                        bot_sort_asc.append(True)
-                    dim_bot = bot_pool.sort_values(bot_sort_keys, ascending=bot_sort_asc, na_position="last").head(3)
                     bot_items, bot_keys = _build_items(dim_bot, ch, dim_id, tier="bot")
                     plan_tasks.append((bot_keys, partial(analyze_content, ai_api_key, ai_provider, ai_model, bot_items, False, top_items)))
 
