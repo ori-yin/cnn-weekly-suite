@@ -35,7 +35,7 @@ _AI_TIERS = ("top", "bot")
 # 调用方：
 #   - tab_plan.render() 在解析消息内容后立即过滤（影响 UI 卡片 + 导出 HTML）
 #   - page.py AI handler 在 df_ai.copy() 后立即过滤（影响 LLM 入参）
-_CONTENT_EXCLUDE_KWS = ("礼品卡", "入群礼", "团餐", "BF用卡", "BF开卡", "BF续卡")
+_CONTENT_EXCLUDE_KWS = ("礼品卡", "入群礼", "团餐", "BF用卡", "BF开卡", "BF续卡", "测试")
 
 
 def _content_exclusion_mask(df: pd.DataFrame) -> pd.Series:
