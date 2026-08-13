@@ -55,7 +55,7 @@ def _compute_bu_metrics(df: pd.DataFrame) -> dict:
         "点击人次": int(df["点击人次"].sum()),
         "CTR": df["点击人次"].sum() / df["触达成功"].sum() * 100 if df["触达成功"].sum() > 0 else 0,
         "订单GC": int(df["订单GC"].sum()),
-        "GC转化率": df["订单GC"].sum() / df["点击人次"].sum() * 100 if df["点击人次"].sum() > 0 else 0,
+        "下单转化率": (df["点击后下单人次"].sum() / df["点击人次"].sum() * 100) if ("点击后下单人次" in df.columns and df["点击人次"].sum() > 0) else 0,
         "订单Sales": round(df["订单Sales"].sum(), 2) if "订单Sales" in df.columns else 0,
     }
 
@@ -184,12 +184,12 @@ def render(df: pd.DataFrame, prior_df: pd.DataFrame | None = None, bu_summary: d
     else:
         bu_df["CTR_norm"] = 50
 
-    # GC转化率 归一化（Q3 阈值）
-    gc_q3 = bu_df["GC转化率"].quantile(0.75)
-    if gc_q3 > 0:
-        bu_df["GC_norm"] = bu_df["GC转化率"].apply(lambda x: 100 if x >= gc_q3 else 100 * (x / gc_q3) ** 1.5)
+    # 下单转化率 归一化（Q3 阈值）
+    cvr_q3 = bu_df["下单转化率"].quantile(0.75)
+    if cvr_q3 > 0:
+        bu_df["CVR_norm"] = bu_df["下单转化率"].apply(lambda x: 100 if x >= cvr_q3 else 100 * (x / cvr_q3) ** 1.5)
     else:
-        bu_df["GC_norm"] = 50
+        bu_df["CVR_norm"] = 50
 
     # 置信度惩罚
     def _penalty(reach):
@@ -200,7 +200,7 @@ def render(df: pd.DataFrame, prior_df: pd.DataFrame | None = None, bu_summary: d
         return 1.0
 
     bu_df["惩罚"] = bu_df["触达成功"].apply(_penalty)
-    bu_df["评分"] = (bu_df["CTR_norm"] * 0.50 + bu_df["触达_norm"] * 0.25 + bu_df["GC_norm"] * 0.25) * bu_df["惩罚"]
+    bu_df["评分"] = (bu_df["CTR_norm"] * 0.50 + bu_df["触达_norm"] * 0.25 + bu_df["CVR_norm"] * 0.25) * bu_df["惩罚"]
     bu_df["评分"] = bu_df["评分"].round(1)
 
     # IT-Traffic 是裁判部门，只在 BU 总览表 + 详情浮层隐藏（排行榜照常展示）
@@ -305,7 +305,7 @@ def render(df: pd.DataFrame, prior_df: pd.DataFrame | None = None, bu_summary: d
             f"<td style='{td_style}text-align:right;'>{row['CTR']:.2f}%</td>"
             + (f"<td style='{td_style}text-align:right;'>{wow_cell}</td>" if show_wow else "")
             + f"<td style='{td_style}text-align:right;'>{int(row['订单GC'] / d):,}</td>"
-            f"<td style='{td_style}text-align:right;'>{row['GC转化率']:.1f}%</td>"
+            f"<td style='{td_style}text-align:right;'>{row['下单转化率']:.1f}%</td>"
             f"<td style='{td_style}text-align:right;'>{row['订单Sales'] / d:,.2f}</td>"
             f"<td style='{td_style}text-align:right;'>{row['评分']:.1f}</td>"
             f"</tr>"
@@ -322,7 +322,7 @@ def render(df: pd.DataFrame, prior_df: pd.DataFrame | None = None, bu_summary: d
         f'<th style="{TH}text-align:right;">CTR</th>'
         + (f'<th style="{TH}text-align:right;">CTR (环比)</th>' if show_wow else "")
         + f'<th style="{TH}text-align:right;">订单GC（日均）</th>'
-        f'<th style="{TH}text-align:right;">GC转化率</th>'
+        f'<th style="{TH}text-align:right;">下单转化率</th>'
         f'<th style="{TH}text-align:right;">订单Sales（日均）</th>'
         f'<th style="{TH}text-align:right;">评分</th>'
         f'</tr></thead>'
@@ -384,6 +384,7 @@ def _aggregate_bu_plans(bu_df: pd.DataFrame) -> list:
         "发送日期": "first",
         "触达成功": "sum",
         "点击人次": "sum",
+        "点击后下单人次": "sum",
         "订单GC": "sum",
         "计划类型": lambda s: _format_plan_type(s.tolist()),
     }
@@ -418,7 +419,7 @@ def _aggregate_bu_plans(bu_df: pd.DataFrame) -> list:
 
 
 def _render_plan_rows_html(plan_rows: list) -> str:
-    """单 BU 的 Plan 明细子表 HTML（嵌进浮层）。13 列 + 表头：Plan ID / Message ID / 渠道 / 计划类型 / 标题 / 正文 / 触达 / 点击 / CTR / GC / GC转化率 / Sales / 评分。
+    """单 BU 的 Plan 明细子表 HTML（嵌进浮层）。13 列 + 表头：Plan ID / Message ID / 渠道 / 计划类型 / 标题 / 正文 / 触达 / 点击 / CTR / GC / 下单转化率 / Sales / 评分。
     标题与正文完整展示，不截断。"""
     if not plan_rows:
         return '<div style="padding:10px 16px;color:#999;font-size:12px;">本周无发送</div>'
@@ -436,7 +437,7 @@ def _render_plan_rows_html(plan_rows: list) -> str:
         clicks = int(row.get("点击人次", 0) or 0)
         ctr = row.get("CTR", 0) or 0
         gc = int(row.get("订单GC", 0) or 0)
-        gc_rate = row.get("GC转化率", 0) or 0
+        cvr_rate = row.get("下单转化率", 0) or 0
         sales = float(row.get("订单Sales", 0) or 0)
         score = float(row.get("综合评分", 0) or 0)
         rows_html += (
@@ -451,7 +452,7 @@ def _render_plan_rows_html(plan_rows: list) -> str:
             f'<td style="padding:6px 8px;color:{THEME_INK};text-align:right;">{clicks:,}</td>'
             f'<td style="padding:6px 8px;color:{THEME_INK};text-align:right;font-weight:700;">{ctr:.2f}%</td>'
             f'<td style="padding:6px 8px;color:{THEME_INK};text-align:right;">{gc:,}</td>'
-            f'<td style="padding:6px 8px;color:{THEME_INK};text-align:right;">{gc_rate:.1f}%</td>'
+            f'<td style="padding:6px 8px;color:{THEME_INK};text-align:right;">{cvr_rate:.1f}%</td>'
             f'<td style="padding:6px 8px;color:{THEME_INK};text-align:right;">{sales:,.2f}</td>'
             f'<td style="padding:6px 8px;color:{MCD_RED};text-align:right;font-weight:700;">{score:.1f}</td>'
             f'</tr>'
@@ -469,7 +470,7 @@ def _render_plan_rows_html(plan_rows: list) -> str:
         f'<th style="text-align:right;padding:6px 8px;">点击</th>'
         f'<th style="text-align:right;padding:6px 8px;">CTR</th>'
         f'<th style="text-align:right;padding:6px 8px;">订单GC</th>'
-        f'<th style="text-align:right;padding:6px 8px;">GC转化率</th>'
+        f'<th style="text-align:right;padding:6px 8px;">下单转化率</th>'
         f'<th style="text-align:right;padding:6px 8px;">订单Sales</th>'
         f'<th style="text-align:right;padding:6px 8px;">评分</th>'
         f'</tr></thead>'

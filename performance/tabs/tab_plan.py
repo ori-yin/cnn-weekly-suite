@@ -260,8 +260,8 @@ def _plan_card_html(row: pd.Series, rank: int, is_good: bool, ai_result: dict = 
         ("触达", f'{int(row.get("触达成功", 0)):,}'),
         ("点击", f'{int(row.get("点击人次", 0)):,}'),
         ("CTR", f'{row.get("CTR", 0):.2f}%'),
-        ("GC", f'{int(row.get("订单GC", 0)):,}'),
-        ("GC率", f'{row.get("GC转化率", 0):.1f}%'),
+        ("订单GC", f'{int(row.get("订单GC", 0)):,}'),
+        ("下单转化率", f'{row.get("下单转化率", 0):.1f}%'),
         ("Sales", f'{row.get("订单Sales", 0):,.2f}'),
     ]
     # 新数据（>=7/28）多 Unit 同文案时显示 Unit 数副标；旧数据无该列时跳过
@@ -357,6 +357,7 @@ def _aggregate_plans(ch_df: pd.DataFrame) -> pd.DataFrame:
         "发送日期": "first",
         "触达成功": "sum",
         "点击人次": "sum",
+        "点击后下单人次": "sum",
         "订单GC": "sum",
         "消息标题": "first",
         "消息内容": "first",
@@ -384,7 +385,7 @@ def _aggregate_plans(ch_df: pd.DataFrame) -> pd.DataFrame:
         plan_agg = plan_agg.merge(unit_n, on=keys, how="left")
 
     plan_agg = plan_agg[plan_agg["触达成功"] > 0]
-    # 聚合后必须先求和再算率（CTR/GC 转化率），避免按行先算率再平均的精度坑
+    # 聚合后必须先求和再算率（CTR/下单转化率），避免按行先算率再平均的精度坑
     return add_rate_metrics(plan_agg)
 
 

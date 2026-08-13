@@ -83,18 +83,19 @@ def _parse_dates(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _derive_metrics(df: pd.DataFrame) -> pd.DataFrame:
-    """计算衍生指标：CTR、GC转化率、触达率（向量化：分母>0 才算，否则 0）"""
+    """计算衍生指标：CTR、下单转化率、触达率（向量化：分母>0 才算，否则 0）"""
     reach = df["触达成功"]
     clicks = df["点击人次"]
     df["CTR"] = np.where(reach > 0, clicks / reach * 100, 0.0)
-    df["GC转化率"] = np.where(clicks > 0, df["订单GC"] / clicks * 100, 0.0)
+    # 下单转化率口径：点击后下单人次 ÷ 点击人次 ×100（与 mcd-content-rank 一致）；旧 CSV 缺列时 .get 兜底全 0
+    df["下单转化率"] = np.where(clicks > 0, df.get("点击后下单人次", 0) / clicks * 100, 0.0)
     est = df["预计触达"]
     df["触达率"] = np.where(est > 0, reach / est * 100, 0.0)
     return df
 
 
 def add_rate_metrics(df: pd.DataFrame) -> pd.DataFrame:
-    """聚合后必须先求和再算率（CTR / GC 转化率）：避免按行先算率再平均的精度坑。
+    """聚合后必须先求和再算率（CTR / 下单转化率）：避免按行先算率再平均的精度坑。
     与 _derive_metrics 的区别：本函数假设 df 是已聚合后的明细（行=聚合键），用 np.where
     保证分母>0 才算率，否则 0.0。"""
     if "触达成功" in df.columns and "点击人次" in df.columns:
@@ -103,10 +104,10 @@ def add_rate_metrics(df: pd.DataFrame) -> pd.DataFrame:
             df["点击人次"] / df["触达成功"] * 100,
             0.0,
         )
-    if "订单GC" in df.columns and "点击人次" in df.columns:
-        df["GC转化率"] = np.where(
+    if "点击后下单人次" in df.columns and "点击人次" in df.columns:
+        df["下单转化率"] = np.where(
             df["点击人次"] > 0,
-            df["订单GC"] / df["点击人次"] * 100,
+            df["点击后下单人次"] / df["点击人次"] * 100,
             0.0,
         )
     return df

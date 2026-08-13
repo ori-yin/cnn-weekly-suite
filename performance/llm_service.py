@@ -48,7 +48,7 @@ def build_analysis_prompt(items: list, is_good: bool = True, good_cases: list = 
             f"｜点击：{item['点击人次']}"
             f"｜CTR：{item['CTR']:.2f}%"
             f"｜GC：{item['订单GC']}"
-            f"｜GC转化率：{item['订单GC转化率']:.2f}%"
+            f"｜下单转化率：{item['下单转化率']:.2f}%"
             f"｜综合评分：{item['综合评分']:.2f}"
             f"｜排名：第{item['排名']}名"
         )
@@ -75,7 +75,7 @@ def build_analysis_prompt(items: list, is_good: bool = True, good_cases: list = 
         for j, g in enumerate(good_cases, 1):
             ref_lines.append(
                 f"  Good{j}｜标题：{g['标题']}｜正文：{g['内容']}"
-                f"｜CTR：{g['CTR']:.2f}%｜GC转化率：{g['订单GC转化率']:.2f}%"
+                f"｜CTR：{g['CTR']:.2f}%｜下单转化率：{g['下单转化率']:.2f}%"
             )
     ref_block = chr(10).join(ref_lines) if ref_lines else "（无同类 Good Case）"
 

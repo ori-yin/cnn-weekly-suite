@@ -441,7 +441,7 @@ Mac 的 `a2bbcc4` 是 root commit，**只推了 7 个 emergency 文件**（day_t
 |---|---|
 | `shared/theme.py` | `COLUMN_MAPPING` 加 `Unit ID` / `Message ID` 别名 |
 | `shared/data.py` | 新增 `ID_COLS = ("Plan ID","Unit ID","Message ID")`，18 位 ID 跳过数值化；新增 `_normalize_id_columns` strip 尾部 `\t`；`_coerce_numeric_columns` skip ID 列；`_read_xlsx` / `_read_csv` 调用 normalize |
-| `performance/tabs/tab_plan.py::_aggregate_plans` | 聚合键 (Plan, Message) + Unit数；先求和再算率（CTR/GC 转化率）；`dropna=False, as_index=False` |
+| `performance/tabs/tab_plan.py::_aggregate_plans` | 聚合键 (Plan, Message) + Unit数；先求和再算率（CTR/下单转化率）；`dropna=False, as_index=False` |
 | `performance/tabs/tab_bu.py::_aggregate_bu_plans` | 同上（BU 浮层子表）|
 | `performance/page.py` | AI handler groupby (Plan, Message)；AI key 带 Message ID 后缀避免撞 key；top/bot 排序二级 tie-break 加 Message ID |
 | `performance/tabs/tab_plan.py::_plan_card_html` | 卡片数据豆腐块加 `Unit` 药丸（仅 Unit数>1 时显示）|
@@ -484,7 +484,7 @@ Mac 的 `a2bbcc4` 是 root commit，**只推了 7 个 emergency 文件**（day_t
 
 ## 18. 2026-08-10 BU 浮层明细 9 列 → 13 列
 
-**业务诉求**：BU 总览点 BU 名弹出浮层后，只能看发送明细（Plan×Message），看不到 GC、GC转化率、Sales、评分，看不出这条文案值不值。补这 4 列。
+**业务诉求**：BU 总览点 BU 名弹出浮层后，只能看发送明细（Plan×Message），看不到 GC、下单转化率、Sales、评分，看不出这条文案值不值。补这 4 列。
 
 **改动**（commit `1158080`，1 文件 +16/-1）
 
@@ -492,10 +492,10 @@ Mac 的 `a2bbcc4` 是 root commit，**只推了 7 个 emergency 文件**（day_t
 |---|---|
 | `performance/tabs/tab_bu.py:11` | 加 `from performance.scoring import compute_scores` |
 | `performance/tabs/tab_bu.py::_aggregate_bu_plans` | `add_rate_metrics(plan_agg)` 后调 `compute_scores(plan_agg)`，产出 Plan×Message 级「综合评分」列 |
-| `performance/tabs/tab_bu.py::_render_plan_rows_html` | 表头 + 行数据加 4 列（订单GC / GC转化率 / 订单Sales / 评分），「评分」用 MCD_RED 加粗；9 列 → 13 列；docstring 同步 |
+| `performance/tabs/tab_bu.py::_render_plan_rows_html` | 表头 + 行数据加 4 列（订单GC / 下单转化率 / 订单Sales / 评分），「评分」用 MCD_RED 加粗；9 列 → 13 列；docstring 同步 |
 
 **评分含义**：用 Plan×Message 粒度算（与「内容分析」tab 同 `scoring.compute_scores`），**不是 BU 整体评分**。看的是「这条文案值多少分」。
 
 **导出 HTML 同步**：`page.py:405` `tables["bu"] = bu_table_html` 直接复用 `render_bu()` 返回值（已含 popover 浮层 HTML），无需改 `export.py`，导出报告自动含 13 列。
 
-**兼容性**：`compute_scores` 输入列 `渠道/触达成功/点击人次/订单GC` + `add_rate_metrics` 后的 `CTR/GC转化率` BU 浮层聚合已全部具备；`data_is_v2` 自动适配新旧数据（新数据按 `(Plan, Message)` 聚合，旧数据退化按 `Plan`）。
+**兼容性**：`compute_scores` 输入列 `渠道/触达成功/点击人次/订单GC` + `add_rate_metrics` 后的 `CTR/下单转化率` BU 浮层聚合已全部具备；`data_is_v2` 自动适配新旧数据（新数据按 `(Plan, Message)` 聚合，旧数据退化按 `Plan`）。

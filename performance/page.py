@@ -179,7 +179,7 @@ def render_page(raw_df, dau_df):
                         "点击人次": _safe_int(row.get("点击人次")),
                         "CTR": _safe_float(row.get("CTR")),
                         "订单GC": _safe_int(row.get("订单GC")),
-                        "订单GC转化率": _safe_float(row.get("GC转化率")),
+                        "下单转化率": _safe_float(row.get("下单转化率")),
                         "综合评分": _safe_float(row.get("综合评分")),
                         "排名": rank,
                     })
@@ -197,6 +197,7 @@ def render_page(raw_df, dau_df):
                     "Plan名称": "first",
                     "触达成功": "sum",
                     "点击人次": "sum",
+                    "点击后下单人次": "sum",
                     "订单GC": "sum",
                     "综合评分": "mean",
                     "消息标题": "first",
@@ -215,7 +216,7 @@ def render_page(raw_df, dau_df):
                     group_keys = ["Plan ID"]
 
                 plan_agg = ch_df.groupby(group_keys, dropna=False, as_index=False).agg(agg)
-                # 聚合后必须先求和再算率（CTR/GC转化率），避免按行先算率再平均的精度坑
+                # 聚合后必须先求和再算率（CTR/下单转化率），避免按行先算率再平均的精度坑
                 add_rate_metrics(plan_agg)
 
                 plan_agg = plan_agg[plan_agg["触达成功"] > 0]

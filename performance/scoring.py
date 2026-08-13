@@ -6,9 +6,9 @@ scoring.py - CNN Performance Weekly：综合评分算法
 import numpy as np
 import pandas as pd
 from performance.config import (
-    CTR_THRESHOLDS, GC_THRESHOLDS,
-    CTR_UNKNOWN_THRESHOLD, GC_UNKNOWN_THRESHOLD,
-    SCORING_EXP, W_REACH, W_CTR, W_GC,
+    CTR_THRESHOLDS, CVR_THRESHOLDS,
+    CTR_UNKNOWN_THRESHOLD, CVR_UNKNOWN_THRESHOLD,
+    SCORING_EXP, W_REACH, W_CTR, W_CVR,
     CONFIDENCE_THRESHOLDS, CONFIDENCE_DEFAULT,
 )
 
@@ -41,8 +41,8 @@ def compute_scores(df: pd.DataFrame) -> pd.DataFrame:
     """
     为每个 Plan 计算综合评分（向量化版）。
 
-    输入 df 需包含：渠道、触达成功、点击人次、订单GC
-    输出新增列：CTR得分、GC得分、触达得分、综合评分
+    输入 df 需包含：渠道、触达成功、点击人次、点击后下单人次
+    输出新增列：CTR得分、下单转化得分、触达得分、综合评分
     """
     df = df.copy()
 
@@ -52,23 +52,23 @@ def compute_scores(df: pd.DataFrame) -> pd.DataFrame:
 
     channels = df.get("渠道", pd.Series([""] * len(df))).fillna("")
     ctr_thr = channels.map(CTR_THRESHOLDS).fillna(CTR_UNKNOWN_THRESHOLD).to_numpy(dtype=float)
-    gc_thr = channels.map(GC_THRESHOLDS).fillna(GC_UNKNOWN_THRESHOLD).to_numpy(dtype=float)
+    cvr_thr = channels.map(CVR_THRESHOLDS).fillna(CVR_UNKNOWN_THRESHOLD).to_numpy(dtype=float)
 
     ctr = df.get("CTR", pd.Series(np.zeros(len(df)))).to_numpy(dtype=float)
-    gc_rate = df.get("GC转化率", pd.Series(np.zeros(len(df)))).to_numpy(dtype=float)
+    cvr_rate = df.get("下单转化率", pd.Series(np.zeros(len(df)))).to_numpy(dtype=float)
     reach = df["触达成功"].to_numpy(dtype=float)
 
     ctr_score = _piecewise_score_arr(ctr, ctr_thr)
-    gc_score = _piecewise_score_arr(gc_rate, gc_thr)
+    cvr_score = _piecewise_score_arr(cvr_rate, cvr_thr)
     reach_score = _reach_score(reach, max_reach)
     penalty = _confidence_penalty(reach)
 
-    raw = W_REACH * reach_score + W_CTR * ctr_score + W_GC * gc_score
+    raw = W_REACH * reach_score + W_CTR * ctr_score + W_CVR * cvr_score
     final = raw * penalty
 
     df["触达得分"] = np.round(reach_score, 1)
     df["CTR得分"] = np.round(ctr_score, 1)
-    df["GC得分"] = np.round(gc_score, 1)
+    df["下单转化得分"] = np.round(cvr_score, 1)
     df["综合评分"] = np.round(final, 1)
 
     return df

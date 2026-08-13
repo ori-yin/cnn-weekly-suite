@@ -17,7 +17,7 @@ def _compute_metrics(df: pd.DataFrame) -> dict:
         "点击人次": df["点击人次"].sum(),
         "CTR": df["点击人次"].sum() / df["触达成功"].sum() * 100 if df["触达成功"].sum() > 0 else 0,
         "订单GC": df["订单GC"].sum(),
-        "GC转化率": df["订单GC"].sum() / df["点击人次"].sum() * 100 if df["点击人次"].sum() > 0 else 0,
+        "下单转化率": (df["点击后下单人次"].sum() / df["点击人次"].sum() * 100) if ("点击后下单人次" in df.columns and df["点击人次"].sum() > 0) else 0,
         "Plan数": df["Plan ID"].nunique() if "Plan ID" in df.columns else len(df),
         "订单Sales": round(df["订单Sales"].sum(), 2) if "订单Sales" in df.columns else 0,
     }
@@ -37,7 +37,7 @@ def _channel_detail_table(df_sub: pd.DataFrame, plan_type_label: str, days_count
             "点击人次": int(m["点击人次"] / days_count) if days_count > 0 else 0,
             "CTR": m["CTR"],
             "订单GC": int(m["订单GC"] / days_count) if days_count > 0 else 0,
-            "GC转化率": m["GC转化率"],
+            "下单转化率": m["下单转化率"],
             "Plan数": m["Plan数"],
             "订单Sales": round(m["订单Sales"] / days_count, 2) if days_count > 0 else 0,
         })
@@ -61,7 +61,7 @@ def _channel_detail_table(df_sub: pd.DataFrame, plan_type_label: str, days_count
             f"<td style='{td_style}text-align:right;'>{r['点击人次']:,}</td>"
             f"<td style='{td_style}text-align:right;'>{r['CTR']:.2f}%</td>"
             f"<td style='{td_style}text-align:right;'>{r['订单GC']:,}</td>"
-            f"<td style='{td_style}text-align:right;'>{r['GC转化率']:.1f}%</td>"
+            f"<td style='{td_style}text-align:right;'>{r['下单转化率']:.1f}%</td>"
             f"<td style='{td_style}text-align:right;'>{r['订单Sales']:,.2f}</td>"
             f"</tr>"
         )
@@ -76,7 +76,7 @@ def _channel_detail_table(df_sub: pd.DataFrame, plan_type_label: str, days_count
         f'<th style="{TH}text-align:right;">点击人次（日均）</th>'
         f'<th style="{TH}text-align:right;">CTR</th>'
         f'<th style="{TH}text-align:right;">订单GC（日均）</th>'
-        f'<th style="{TH}text-align:right;">GC转化率</th>'
+        f'<th style="{TH}text-align:right;">下单转化率</th>'
         f'<th style="{TH}text-align:right;">订单Sales（日均）</th>'
         f'</tr></thead>'
         f'<tbody>{rows_html}</tbody>'
