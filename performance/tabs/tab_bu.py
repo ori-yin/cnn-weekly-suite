@@ -278,9 +278,9 @@ def render(df: pd.DataFrame, prior_df: pd.DataFrame | None = None, bu_summary: d
 <style>
 .bu-link {{ color: inherit; text-decoration: none; cursor: pointer; }}
 .bu-link:hover {{ background: #F5F5F5; color: {MCD_RED} !important; }}
-.bu-pop {{ display: none; position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,.35); align-items: center; justify-content: center; }}
+.bu-pop {{ display: none; position: fixed; inset: 0; z-index: 999999; background: rgba(0,0,0,.35); align-items: center; justify-content: center; isolation: isolate; }}
 .bu-pop:target {{ display: flex; }}
-.bu-pop-card {{ background: {THEME_PAPER}; border: 1px solid {THEME_LINE}; border-radius: 12px; padding: 20px 24px; max-width: 960px; width: 90vw; max-height: 80vh; overflow: auto; box-shadow: 0 8px 32px rgba(0,0,0,.25); }}
+.bu-pop-card {{ background: {THEME_PAPER}; border: 1px solid {THEME_LINE}; border-radius: 12px; padding: 20px 24px; max-width: 1280px; width: 95vw; max-height: 88vh; overflow: auto; box-shadow: 0 8px 32px rgba(0,0,0,.25); }}
 .bu-pop-card .pop-head {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid {THEME_LINE}; }}
 .bu-pop-card .pop-close {{ text-decoration: none; color: #999; font-size: 20px; padding: 0 8px; line-height: 1; }}
 .bu-pop-card .pop-close:hover {{ color: {MCD_RED}; }}
@@ -446,8 +446,8 @@ def _render_plan_rows_html(plan_rows: list) -> str:
             f'<td style="padding:6px 8px;color:{THEME_INK};font-size:11px;white-space:nowrap;">{msg_id}</td>'
             f'<td style="padding:6px 8px;color:{THEME_INK};white-space:nowrap;">{channel}</td>'
             f'<td style="padding:6px 8px;color:{THEME_INK};white-space:nowrap;">{plan_type}</td>'
-            f'<td style="padding:6px 8px;color:{THEME_INK};word-break:break-word;white-space:pre-wrap;">{title}</td>'
-            f'<td style="padding:6px 8px;color:{THEME_INK};word-break:break-word;white-space:pre-wrap;">{text}</td>'
+            f'<td style="padding:6px 8px;color:{THEME_INK};min-width:220px;max-width:380px;overflow-wrap:break-word;white-space:pre-wrap;">{title}</td>'
+            f'<td style="padding:6px 8px;color:{THEME_INK};min-width:280px;max-width:460px;overflow-wrap:break-word;white-space:pre-wrap;">{text}</td>'
             f'<td style="padding:6px 8px;color:{THEME_INK};text-align:right;">{reach:,}</td>'
             f'<td style="padding:6px 8px;color:{THEME_INK};text-align:right;">{clicks:,}</td>'
             f'<td style="padding:6px 8px;color:{THEME_INK};text-align:right;font-weight:700;">{ctr:.2f}%</td>'
@@ -464,8 +464,8 @@ def _render_plan_rows_html(plan_rows: list) -> str:
         f'<th style="text-align:left;padding:6px 8px;">Message ID</th>'
         f'<th style="text-align:left;padding:6px 8px;">渠道</th>'
         f'<th style="text-align:left;padding:6px 8px;">计划类型</th>'
-        f'<th style="text-align:left;padding:6px 8px;">标题</th>'
-        f'<th style="text-align:left;padding:6px 8px;">正文</th>'
+        f'<th style="text-align:left;padding:6px 8px;min-width:220px;max-width:380px;">标题</th>'
+        f'<th style="text-align:left;padding:6px 8px;min-width:280px;max-width:460px;">正文</th>'
         f'<th style="text-align:right;padding:6px 8px;">触达</th>'
         f'<th style="text-align:right;padding:6px 8px;">点击</th>'
         f'<th style="text-align:right;padding:6px 8px;">CTR</th>'
