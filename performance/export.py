@@ -343,9 +343,9 @@ def _get_css() -> str:
   /* ─── BU 详情浮层（:target 触发）──── */
   .bu-link { color: inherit; text-decoration: none; cursor: pointer; }
   .bu-link:hover { background: #F5F5F5; color: #DB0005 !important; }
-  .bu-pop { display: none; position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,.35); align-items: center; justify-content: center; }
+  .bu-pop { display: none; position: fixed; inset: 0; z-index: 999999; background: rgba(0,0,0,.35); align-items: center; justify-content: center; isolation: isolate; }
   .bu-pop:target { display: flex; }
-  .bu-pop-card { background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 12px; padding: 20px 24px; max-width: 960px; width: 90vw; max-height: 80vh; overflow: auto; box-shadow: 0 8px 32px rgba(0,0,0,.25); }
+  .bu-pop-card { background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 12px; padding: 20px 24px; max-width: 1280px; width: 95vw; max-height: 88vh; overflow: auto; box-shadow: 0 8px 32px rgba(0,0,0,.25); }
   .bu-pop-card .pop-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid #E0E0E0; }
   .bu-pop-card .pop-close { text-decoration: none; color: #999; font-size: 20px; padding: 0 8px; line-height: 1; }
   .bu-pop-card .pop-close:hover { color: #DB0005; }
