@@ -209,7 +209,20 @@ def render_channel_health(df: pd.DataFrame, raw_df: pd.DataFrame | None = None, 
     if not cards:
         return ''
 
+    # 自适应列数：1/2/3 单排；4 走 2×2；≥5 优先 3 列（能整除则 3，否则看能否整除2，否则兜底 3）
+    n = len(cards)
+    if n <= 3:
+        cols = n
+    elif n == 4:
+        cols = 2
+    elif n % 3 == 0:
+        cols = 3
+    elif n % 2 == 0:
+        cols = 2
+    else:
+        cols = 3
+
     return (
         f'<div class="section-subheader">{section_title}</div>'
-        f'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px;">{"".join(cards)}</div>'
+        f'<div style="display:grid;grid-template-columns:repeat({cols},1fr);gap:12px;margin-bottom:16px;">{"".join(cards)}</div>'
     )
