@@ -499,3 +499,21 @@ Mac 的 `a2bbcc4` 是 root commit，**只推了 7 个 emergency 文件**（day_t
 **导出 HTML 同步**：`page.py:405` `tables["bu"] = bu_table_html` 直接复用 `render_bu()` 返回值（已含 popover 浮层 HTML），无需改 `export.py`，导出报告自动含 13 列。
 
 **兼容性**：`compute_scores` 输入列 `渠道/触达成功/点击人次/订单GC` + `add_rate_metrics` 后的 `CTR/下单转化率` BU 浮层聚合已全部具备；`data_is_v2` 自动适配新旧数据（新数据按 `(Plan, Message)` 聚合，旧数据退化按 `Plan`）。
+
+
+---
+
+## 19. 2026-08-31 渠道健康度卡片网格自适应列数
+
+**业务诉求**：本周 4 个渠道，硬编码 3 列导致第 4 张卡独立成行（3+1），版式丑。本周必须修。
+
+**改动**（commit `84e7e4a`，1 文件 +14/-1）
+
+| 位置 | 改动 |
+|---|---|
+| `performance/channel_health.py:212` | 网格 `repeat(3,1fr)` → 动态列数：`n≤3` 单排；`n=4` 走 2×2；`n≥5` 优先 3 列（能整除则 3，否则整除 2 则 2，否则兜底 3） |
+
+**emergency 不动**：`emergency/components/nudge_grid.py:100` 也是 `repeat(3,1fr)`，但卡片是**写死 3 张**（Operational / On-demand / Responsive），`n` 恒为 3，不存在 3+1 丑态，保持原样。
+
+**关联**
+- 本次顺手 grep 全仓"硬编码 3 列"问题，仅 `channel_health.py` 一处需要修
