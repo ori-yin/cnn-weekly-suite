@@ -134,7 +134,7 @@ def _build_daily_figure(daily_clicks: dict, target: int, week_start: pd.Timestam
         plot_bgcolor=THEME_BG,
         paper_bgcolor=THEME_BG,
         xaxis=dict(title="", gridcolor="#E8E8E8"),
-        yaxis=dict(title="DAU（点击人次）", gridcolor="#E8E8E8", tickformat=","),
+        yaxis=dict(title="DAU", gridcolor="#E8E8E8", tickformat=","),
         showlegend=False,
         font=dict(family="Microsoft YaHei, PingFang SC, -apple-system, sans-serif"),
         bargap=0.3,

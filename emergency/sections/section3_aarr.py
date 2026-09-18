@@ -103,7 +103,7 @@ def _build_aarr_figure(df: pd.DataFrame, week_start: pd.Timestamp, target: int, 
         plot_bgcolor=THEME_BG,
         paper_bgcolor=THEME_BG,
         xaxis=dict(title="", gridcolor="#E8E8E8"),
-        yaxis=dict(title="DAU（点击人次）", gridcolor="#E8E8E8", tickformat=","),
+        yaxis=dict(title="渠道点击人次", gridcolor="#E8E8E8", tickformat=","),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=12)),
         font=dict(family="Microsoft YaHei, PingFang SC, -apple-system, sans-serif"),
     )

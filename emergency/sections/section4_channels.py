@@ -90,7 +90,7 @@ def _build_channels_figure(df: pd.DataFrame, week_start, target: int, days_total
         plot_bgcolor=THEME_BG,
         paper_bgcolor=THEME_BG,
         xaxis=dict(title="", gridcolor="#E8E8E8"),
-        yaxis=dict(title="DAU（点击人次）", gridcolor="#E8E8E8", tickformat=","),
+        yaxis=dict(title="渠道点击人次", gridcolor="#E8E8E8", tickformat=","),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=12)),
         font=dict(family="Microsoft YaHei, PingFang SC, -apple-system, sans-serif"),
     )
@@ -102,7 +102,7 @@ def render(df: pd.DataFrame, target_daily: int, week_start: pd.Timestamp = None)
     st.html(f"""
 <div style="font-size:14px;font-weight:600;color:#6B6B6B;
   padding:6px 0 6px 0;margin:6px 0 12px 0;letter-spacing:.2px;">
-  渠道 DAU
+  渠道点击人次
 </div>
 """)
 
@@ -116,7 +116,7 @@ def render(df: pd.DataFrame, target_daily: int, week_start: pd.Timestamp = None)
 
 def render_html(df: pd.DataFrame, target_daily: int, fig: go.Figure) -> str:
     """导出用：返回 HTML 片段（"目标拆解" 子标题，灰字极简）"""
-    h2_title = '<h2 style="display:flex;align-items:center;gap:12px;font-size:19px;font-weight:800;color:#1A1A1A;letter-spacing:.3px;margin:0 0 14px 0;"><span style="display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:9px;background:#DB0005;color:#fff;font-size:15px;font-weight:800;flex-shrink:0;">4</span>渠道 DAU</h2>'
+    h2_title = '<h2 style="display:flex;align-items:center;gap:12px;font-size:19px;font-weight:800;color:#1A1A1A;letter-spacing:.3px;margin:0 0 14px 0;"><span style="display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:9px;background:#DB0005;color:#fff;font-size:15px;font-weight:800;flex-shrink:0;">4</span>渠道点击人次</h2>'
 
     if not fig.data:
         return f"""
