@@ -169,7 +169,7 @@ def render_channel_health(df: pd.DataFrame, raw_df: pd.DataFrame | None = None, 
     click_label = f'点击人次（{cur_period} 日均）'
     section_title = f'渠道健康度（{cur_period} vs {base_period} 分位）'
 
-    n_cur = int(df['发送日期'].nunique()) or 1
+    n_cur = int(df['发送日期'].dt.normalize().nunique()) or 1
     base_daily = _daily_channel_ctr(base) if (base is not None and len(base) > 0) else None
 
     cur_daily = _daily_channel_ctr(df)
@@ -181,7 +181,9 @@ def render_channel_health(df: pd.DataFrame, raw_df: pd.DataFrame | None = None, 
             continue
         click_total = float(sub_cur['点击人次'].sum())
         reach_total = float(sub_cur['触达成功'].sum())
-        cur_click_daily = click_total / n_cur
+        # 日均点击分母用「该渠道在现期实际触达的天数」，与基期 daily mean、分位口径一致
+        n_cur_ch = int(sub_cur['发送日期'].dt.normalize().nunique()) or 1
+        cur_click_daily = click_total / n_cur_ch
         cur_ctr = click_total / reach_total * 100 if reach_total > 0 else 0
 
         if base_daily is None:
