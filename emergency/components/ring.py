@@ -1,6 +1,6 @@
 """
 components/ring.py - Canvas 环（单 iframe 内嵌卡片 + 动画）
-- 提供 render_ring()：单 st.components.v1.html() 同时渲染 card + canvas + JS
+- 提供 render_ring()：单 st.iframe() 同时渲染 card + canvas + JS
   → 解决了「st.markdown → st.components → 逃出列布局」的问题
 - 提供 render_ring_static_html()：导出用纯 HTML（SVG 版本，无动画）
 """
@@ -12,7 +12,7 @@ ANIME_CDN = "https://cdn.jsdelivr.net/npm/animejs@3.2.2/lib/anime.min.js"
 def render_ring(actual: int, target: int, completion: float, size: int = 260, card_height: int = 480) -> None:
     """
     单 iframe 渲染：card border + title + canvas + JS 全部在同一个 HTML blob 内。
-    避免 st.components.v1.html() 跳出 Streamlit 列容器边界的问题。
+    避免 st.iframe() 跳出 Streamlit 列容器边界的问题。
     """
     pct = max(0.0, completion)
     if pct > 1.5:

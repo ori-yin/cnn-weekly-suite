@@ -246,8 +246,8 @@ cnn-weekly-suite/
 
 ## 12. Git
 
-- 远程：`https://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@github.com/ori-yin/cnn-weekly-suite.git`
-  - ⚠️ PAT 嵌在 URL 明文（HANDOFF 之前就有），用户电脑仅自用，暂不处理
+- 远程：`https://github.com/ori-yin/cnn-weekly-suite.git`
+  - ✅ PAT 于 2026-09-20 撤销，remote URL 不再嵌入凭证；后续推送走 git credential 缓存或 env var
 - HEAD = 当前最新 commit（local only，remote 同步过几次）
 - **`.git` 是新 init 的**（用户原来的 .git 丢失过，详见下节）
 
@@ -426,7 +426,7 @@ Mac 的 `a2bbcc4` 是 root commit，**只推了 7 个 emergency 文件**（day_t
 **token / 同步现状**
 
 - `.git/` 已 init，remote = `https://github.com/ori-yin/cnn-weekly-suite.git`
-- token `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` **仍有效**（API 401 假警报，git credential 缓存命中能正常 push）
+- token 于 2026-09-20 撤销，改用新 PAT + git credential 缓存；本仓库不再包含明文凭证
 - OneDrive ReparsePoint 同步 `.git/` 暂未观察到锁文件打架，但 git 操作时如报 `.git/index.lock` 不消失可临时关 OneDrive 再跑。
 
 ---
@@ -517,3 +517,39 @@ Mac 的 `a2bbcc4` 是 root commit，**只推了 7 个 emergency 文件**（day_t
 
 **关联**
 - 本次顺手 grep 全仓"硬编码 3 列"问题，仅 `channel_health.py` 一处需要修
+
+
+---
+
+## 20. 2026-09-20 与 GitHub 同步踩坑记
+
+**背景**:本地有 4 个未推送 commit(ee2fb67 emergency 图表 y 轴 / f3f55f5 channel-health 分母 / 29ff899 HANDOFF §19 / 2b547ae 卡片),git status -sb 显示 ahead 4。
+
+**坑 1:autocrlf=true 让 git status 撒谎**
+- 本地 .git/config 设了 core.autocrlf = true,checkout 时把 HEAD tree 里的纯 LF 行尾转成 CRLF(仅 18 行被改)
+- git status 不显示这个差异(认为"正常"),但 working tree 实际跟 HEAD tree 字节不同
+- 我用 open(HANDOFF.md,'rb').read() 推上去的就是 CRLF 版(31199 bytes),不是 HEAD tree 的 LF 版(31181 bytes)
+- GitHub API 返回的 blob sha 跟 git ls-tree HEAD HANDOFF.md 不一致,才暴露问题
+
+**坑 2:本地 origin/main ref 严重过期**
+- 真实远端 HEAD 在 9 月 18 日 sync 过(base f1429479235ddf234775d83059314b686f2c3f3f),但本地 .git/refs/remotes/origin/main 还指向 8月17日 1cd8febdd42fd678ec48efb5db46a8cdb6de13d1
+- git fetch 被墙(github.com 直连失败),手动 git update-ref origin/main f142947 也能成,但当时没意识到
+- 导致 git diff origin/main..HEAD 显示 41 行改动,全是误导。本地 HEAD 的 5 文件 SHA 跟远端 base f142947 的 tree 完全一致,代码 100% 匹配
+
+**坑 3:push 出去的 2 个 commit 是空操作**
+- 第一次 46eb9110219ab491a63978b0788a7c1d0036ef8c:把 working tree 的 CRLF 版 HANDOFF.md + 4 个 .py 推上去
+- 第二次 f7c3aa2faff083409561591401b836aa24dd53ee:把 HEAD tree 的 LF 版 HANDOFF.md 推回去
+- 两次新 commit 的 tree 都等于 base tree 8109cbc097228e6661dbcbe43925523314f694e5,等于没改代码
+- 远端 refs/heads/main 现在指向 f7c3aa2f,tree = base tree,多了 2 个无意义 commit(用户决定暂不清)
+
+**坑 4:push 走 GitHub API 的链路不稳**
+- github.com 直连被墙,git push https://... 失败
+- Python urllib.request POST blob 间歇性 HTTP 400(err_body 都读不出来)
+- curl 加 base64 encoding 走 ?data=@file 间歇性 exit 52(schannel renegotiation 后 server close)
+- 最终稳的方案:curl --data-binary @file 加 -H Expect: 加 encoding=utf-8(替代 base64,payload 小 25%)加 retry 3 次
+
+**下次 sync 操作清单**
+1. 写 HANDOFF.md 前先看 git config core.autocrlf,true 就必须用 binary mode 加 LF 写(open(wb).write(text.encode(utf-8))),不能用 Edit/Write 默认路径
+2. 改完立刻 git diff --check 或 git hash-object HANDOFF.md 验证 working tree 字节 == HEAD tree 字节
+3. push 前先核对 blob sha:git hash-object <file> 应等于 curl POST /git/blobs 返回的 sha
+4. 本地 origin ref 过期时别盲信 git diff origin/main..HEAD,要用 GitHub API 直接查远端 HEAD(api.github.com 不被墙)对比 tree
