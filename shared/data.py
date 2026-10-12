@@ -50,6 +50,11 @@ def _coerce_numeric_columns(df: pd.DataFrame) -> pd.DataFrame:
         if col in ID_COLS:
             # 18 位 ID 不能转 float64（精度爆炸），保持字符串
             continue
+        if pd.api.types.is_datetime64_any_dtype(df[col]):
+            # 日期列绝不能数值化：Excel 日期格式被转成 float64 后是 epoch 数字，
+            # 后续 _parse_dates 会把 2026-10-08 解析成 1970-01-21（静默出错）。
+            # 本函数早于 _parse_dates 执行，必须在这里放行。
+            continue
         if pd.api.types.is_numeric_dtype(df[col]):
             df[col] = df[col].astype("float64")
         else:
@@ -207,6 +212,8 @@ def read_dau_sheet(file_bytes: bytes) -> pd.DataFrame:
       - 旧格式（2 列）：日期 / DAU
       - 新格式（3 列）：日期 / 渠道 / DAU；仅保留 渠道=ALL/all 的行作为总 DAU
 
+    强制按「日期」去重（保留首行），避免上游重复行导致下游 X 轴出现重复日期。
+
     返回列固定为 [日期, DAU]，下游无需感知列数差异。
     接受 bytes（由调用方从 uploaded.read() 获得），避免重复读取流。
     """
@@ -256,6 +263,25 @@ def read_dau_sheet(file_bytes: bytes) -> pd.DataFrame:
 
     # 去掉空行
     df = df.dropna(subset=["日期", "DAU"])
+
+    # 按天去重：Sheet2 语义是「按天去重 DAU」，一天只应有一行。
+    # 同一日期出现多行时（常见：3 列格式里 ALL / all 两种写法都被
+    # str(...).upper()=="ALL" 的过滤命中；或上游导出本身有重复行），
+    # 直接进内存会在与 Sheet1 merge 时产生 many-to-many，表现为图表 X 轴
+    # 出现重复日期（10/8, 10/8, 10/9, 10/9...）。
+    # 注意：DAU 已在上游去重，重复行**不可求和**，只能保留其一。
+    dup_mask = df["日期"].duplicated(keep=False)
+    if dup_mask.any():
+        dup_dates = df.loc[dup_mask, "日期"].nunique()
+        conflicting = (
+            df.loc[dup_mask].groupby("日期")["DAU"].nunique().gt(1).sum()
+        )
+        logger.warning(
+            "DAU sheet 存在重复日期：%d 个日期出现多行（其中 %d 个日期的 DAU 取值不一致），"
+            "已按首行去重", dup_dates, int(conflicting)
+        )
+        df = df.drop_duplicates(subset=["日期"], keep="first")
+
     df = df.sort_values("日期").reset_index(drop=True)
 
     return df

@@ -30,15 +30,20 @@ def render(df: pd.DataFrame, target: int, dau_df: pd.DataFrame = None):
         GC=("订单GC", "sum"),
     ).reset_index()
     daily_all.columns = ["日期", "DAU", "触达", "GC"]
+    daily_all = daily_all.sort_values("日期").reset_index(drop=True)
 
     # DAU 数据：优先用第二个 sheet 的去重 DAU
     use_dau_sheet = dau_df is not None and not dau_df.empty and "DAU" in dau_df.columns
     if use_dau_sheet:
         dau_clean = dau_df[["日期", "DAU"]].copy()
         dau_clean["日期"] = dau_clean["日期"].dt.date
-        daily = dau_clean.merge(daily_all[["日期", "触达", "GC"]], on="日期", how="left").fillna(0)
-        daily["触达"] = daily["触达"].astype(int)
-        daily["GC"] = daily["GC"].astype(int)
+        dau_clean = dau_clean.rename(columns={"DAU": "DAU_dedup"})
+        # X 轴基准 = Sheet1 在所选区间内的实际发送日（已在 page.py 按区间过滤）；
+        # Sheet2 去重 DAU 以左连接补齐。若反过来以 Sheet2 为主表，
+        # 两张表覆盖天数不一致时 X 轴会被 Sheet2 带偏（显示与所选区间不符的天数）。
+        daily = daily_all.merge(dau_clean, on="日期", how="left")
+        daily["DAU_dedup"] = daily["DAU_dedup"].fillna(0)
+        daily["DAU"] = daily["DAU_dedup"]
     else:
         daily = daily_all
 
