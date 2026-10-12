@@ -34,7 +34,7 @@ def render_page(raw_df, dau_df):
             min_value=0,
             value=TARGET_DEFAULT_DAU,
             step=1000,
-            help="本周每日目标点击人次（DAU 核心口径）",
+            help="区间日均目标点击人次（DAU 核心口径）",
         )
 
     # 阈值固定（仅 UI 简化，业务逻辑不变）
@@ -85,12 +85,12 @@ def render_page(raw_df, dau_df):
     (
         actual_daily, completion, gap_pct, status,
         days_elapsed, days_remaining, hit_days, need_daily,
-        total_clicks, daily_clicks, week_start,
+        total_clicks, daily_clicks, week_start, days_total,
     ) = metrics
 
-    # ─── 备注：从 session_state 读取 7 天的备注（缺失则初始化为空） ───
+    # ─── 备注：从 session_state 读取区间内每一天的备注（缺失则初始化为空） ───
     day_notes: dict = {}
-    for i in range(7):
+    for i in range(days_total):
         d = week_start + timedelta(days=i)
         d_str = d.strftime("%Y-%m-%d")
         note_key = f"note_{d_str}"
@@ -100,7 +100,11 @@ def render_page(raw_df, dau_df):
 
     # ─── 顶部栏 + 导航栏（与 Performance 统一风格）─────────
     period_str = f"{start_date} ~ {end_date}"
-    render_header("CNN Emergency", "周度 DAU 应急看板", badge=period_str, nav_links=[
+    # 子标题：自然周保持原文案，非自然周改中性说法，避免误导业务方
+    is_natural_week = (days_total == 7 and start_date.weekday() == 0)
+    page_sub = "周度 DAU 应急看板" if is_natural_week else "区间 DAU 应急看板"
+
+    render_header("CNN Emergency", page_sub, badge=period_str, nav_links=[
         ("sec-overview", "应急概览"),
         ("sec-dau", "目标拆解"),
     ])
@@ -108,20 +112,24 @@ def render_page(raw_df, dau_df):
     # ─── 4 个 Section（带锚点，供导航跳转）─────────────────
     st.markdown('<div id="sec-overview"></div>', unsafe_allow_html=True)
     section1_overview.render(df, target_dau, daily_clicks, pd.Timestamp(week_start),
-                              actual_daily, completion, notes=day_notes)
+                              actual_daily, completion, notes=day_notes,
+                              days_total=days_total)
 
-    # week_start（pd.Timestamp）传给所有 section，让柱状图固定 7 天 X 轴
+    # week_start（pd.Timestamp）传给所有 section，让柱状图固定区间天数 X 轴
     week_start_ts = pd.Timestamp(week_start)
 
     st.markdown('<div id="sec-dau"></div>', unsafe_allow_html=True)
     fig2 = section2_dau.render(df, target_dau, daily_clicks, gap_pct, completion,
                                 actual_daily, hit_days, days_elapsed, days_remaining,
-                                need_daily, status, week_start=week_start_ts)
+                                need_daily, status, week_start=week_start_ts,
+                                days_total=days_total)
 
     st.markdown('<div id="sec-aarr"></div>', unsafe_allow_html=True)
-    fig3 = section3_aarr.render(df, target_dau, week_start=week_start_ts)
+    fig3 = section3_aarr.render(df, target_dau, week_start=week_start_ts,
+                                days_total=days_total)
     st.markdown('<div id="sec-channels"></div>', unsafe_allow_html=True)
-    fig4 = section4_channels.render(df, target_dau, week_start=week_start_ts)
+    fig4 = section4_channels.render(df, target_dau, week_start=week_start_ts,
+                                    days_total=days_total)
 
     # ─── 本周备注编辑面板已挪到 Section 1 内部（紧贴 day table） ───
 
@@ -140,7 +148,9 @@ def render_page(raw_df, dau_df):
                 status=status,
                 daily_clicks=daily_clicks,
                 week_start=week_start,
-                week_end=start_date + timedelta(days=6),
+                week_end=end_date,
+                days_total=days_total,
+                is_natural_week=is_natural_week,
                 days_elapsed=days_elapsed,
                 days_remaining=days_remaining,
                 hit_days=hit_days,
@@ -172,14 +182,14 @@ def render_page(raw_df, dau_df):
 
 def _compute_weekly_metrics(df, dau_df, start_date, end_date, target_daily):
     """
-    计算周维度关键指标。
+    计算区间维度关键指标。
 
     重要：这里的「actual / Gap」是 **去重 DAU**（Sheet 2）；
     Nudge 拆解里的「Operational」是 **点击人次**（Sheet 1，不去重）。
     两个数字本就不同，是不同口径，不要"对齐"。
 
     返回: (actual_daily, completion, gap_pct, status, days_elapsed, days_remaining,
-           hit_days, need_daily, total_clicks, daily_clicks, week_start)
+           hit_days, need_daily, total_clicks, daily_clicks, week_start, days_total)
     """
     # ── 去重 DAU：优先 Sheet 2，回退 Sheet 1 ──
     if dau_df is not None and not dau_df.empty and "DAU" in dau_df.columns:
@@ -192,8 +202,9 @@ def _compute_weekly_metrics(df, dau_df, start_date, end_date, target_daily):
         daily_clicks = {pd.Timestamp(k).date() if hasattr(k, "date") else k: float(v) for k, v in daily.items()}
         dau_source = "Sheet 1 点击人次（无去重）"
 
+    # 区间总天数由所选起止日期派生（非固定 7 天），支持非自然周临时报告
+    days_total = (end_date - start_date).days + 1
     days_elapsed = len(daily_clicks)
-    days_total = 7
     days_remaining = max(0, days_total - days_elapsed)
 
     total_clicks = sum(int(v) for v in daily_clicks.values())
@@ -215,7 +226,7 @@ def _compute_weekly_metrics(df, dau_df, start_date, end_date, target_daily):
     return (
         actual_daily, completion, gap_pct, status,
         days_elapsed, days_remaining, hit_days, need_daily,
-        total_clicks, daily_clicks, week_start,
+        total_clicks, daily_clicks, week_start, days_total,
     )
 
 

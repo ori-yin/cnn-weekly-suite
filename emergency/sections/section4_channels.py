@@ -8,12 +8,14 @@ import pandas as pd
 from emergency.config import THEME_BG, CHANNEL_COLORS, CHANNEL_TEXT_COLOR, CHANNELS
 
 
-def _build_channels_figure(df: pd.DataFrame, week_start, target: int, days_total: int = 7) -> go.Figure:
-    """构建 5 渠道堆积柱状图，固定 7 天 X 轴"""
+def _build_channels_figure(df: pd.DataFrame, week_start, target: int,
+                           days_total: int = 7) -> go.Figure:
+    """构建 5 渠道堆积柱状图，固定区间天数 X 轴"""
     if week_start is None:
         return go.Figure()
 
-    # 构造完整 7 天
+    # 构造完整区间日期序列
+    days_total = max(1, int(days_total))
     all_dates = [(week_start + pd.Timedelta(days=i)).date() for i in range(days_total)]
 
     if not df.empty:
@@ -97,7 +99,8 @@ def _build_channels_figure(df: pd.DataFrame, week_start, target: int, days_total
     return fig
 
 
-def render(df: pd.DataFrame, target_daily: int, week_start: pd.Timestamp = None) -> go.Figure:
+def render(df: pd.DataFrame, target_daily: int, week_start: pd.Timestamp = None,
+           days_total: int = 7) -> go.Figure:
     """渲染 Section 4（"目标拆解" 子标题，灰字极简）"""
     st.html(f"""
 <div style="font-size:14px;font-weight:600;color:#6B6B6B;
@@ -106,7 +109,7 @@ def render(df: pd.DataFrame, target_daily: int, week_start: pd.Timestamp = None)
 </div>
 """)
 
-    fig = _build_channels_figure(df, week_start, int(target_daily))
+    fig = _build_channels_figure(df, week_start, int(target_daily), days_total=days_total)
     if not fig.data:
         st.info("暂无渠道数据")
         return fig

@@ -8,6 +8,7 @@ from pathlib import Path
 # 项目元信息（顶部栏固定文案）
 PROJECT_NAME = "CNN Emergency"
 PROJECT_SUB = "周度 DAU 应急观察"
+PROJECT_SUB_RANGE = "区间 DAU 应急观察"
 DEPARTMENT = "McDonald's China · IT Operating · Traffic"
 
 
@@ -25,8 +26,11 @@ def _get_logo_data_url() -> str:
 _LOGO_DATA_URL = _get_logo_data_url()
 
 
-def render_topbar_html(period_str: str = "") -> str:
-    """导出用：返回纯 HTML（SVG 用 base64 inline）"""
+def render_topbar_html(period_str: str = "", is_natural_week: bool = True) -> str:
+    """导出用：返回纯 HTML（SVG 用 base64 inline）
+    is_natural_week=False 时副标题改中性说法，避免非自然周报告被误读为周度。
+    """
+    project_sub = PROJECT_SUB if is_natural_week else PROJECT_SUB_RANGE
     logo_html = (
         f'<img src="{_LOGO_DATA_URL}" class="header-logo" alt="McDonald\'s"/>'
         if _LOGO_DATA_URL else ""
@@ -42,7 +46,7 @@ def render_topbar_html(period_str: str = "") -> str:
   <div class="header-left">
     {date_badge}
     <h1 class="header-title">{PROJECT_NAME}</h1>
-    <div class="header-sub">{PROJECT_SUB}</div>
+    <div class="header-sub">{project_sub}</div>
   </div>
   <div class="header-right">
     {logo_html}

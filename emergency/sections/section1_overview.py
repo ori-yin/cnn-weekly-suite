@@ -1,6 +1,6 @@
 """
 sections/section1_overview.py - Section 1：总览
-布局：环(1/3) | 周维度进度(2/3, 表格+备注编辑) · Nudge 横排在下方
+布局：环(1/3) | 区间进度(2/3, 表格+备注编辑) · Nudge 横排在下方
 """
 import pandas as pd
 import streamlit as st
@@ -28,8 +28,9 @@ def render(
     actual_daily: int,
     completion: float,
     notes: dict | None = None,
+    days_total: int = 7,
 ):
-    """渲染 Section 1（Streamlit）：环 + 周维度进度（表格+备注编辑）顶部，Nudge 横排底部"""
+    """渲染 Section 1（Streamlit）：环 + 区间进度（表格+备注编辑）顶部，Nudge 横排底部"""
     st.html(_section_header("总览"))
 
     col_ring, col_day = st.columns([1, 2], vertical_alignment="top")
@@ -38,7 +39,8 @@ def render(
         render_ring(int(actual_daily), int(target_daily), float(completion), card_height=400)
 
     with col_day:
-        render_day_table_editable(week_start, daily_clicks, int(target_daily), notes=notes)
+        render_day_table_editable(week_start, daily_clicks, int(target_daily), notes=notes,
+                                  days_total=days_total)
 
     # Nudge 横排在 Section 1 下方
     render_nudge_horizontal(df)
@@ -52,10 +54,12 @@ def render_html(
     actual_daily: int,
     completion: float,
     notes: dict | None = None,
+    days_total: int = 7,
 ) -> str:
     """导出用：返回完整 HTML 片段"""
     ring_html = render_ring_static_html(int(actual_daily), int(target_daily), float(completion))
-    day_html = render_day_table_html(week_start, daily_clicks, int(target_daily), notes=notes)
+    day_html = render_day_table_html(week_start, daily_clicks, int(target_daily), notes=notes,
+                                     days_total=days_total)
     days_count = df["发送日期"].dt.date.nunique() if not df.empty else 0
     nudge_html = render_nudge_horizontal_html(df, days_count)
 

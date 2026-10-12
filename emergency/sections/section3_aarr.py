@@ -8,14 +8,16 @@ import pandas as pd
 from emergency.config import MCD_RED, MCD_GOLD, THEME_BG
 
 
-def _build_aarr_figure(df: pd.DataFrame, week_start: pd.Timestamp, target: int, days_total: int = 7) -> go.Figure:
-    """构建 AARR/Normal 堆积柱状图，固定 7 天 X 轴"""
+def _build_aarr_figure(df: pd.DataFrame, week_start: pd.Timestamp, target: int,
+                       days_total: int = 7) -> go.Figure:
+    """构建 AARR/Normal 堆积柱状图，固定区间天数 X 轴"""
     if df.empty or week_start is None:
         return go.Figure()
 
     df_op = df[df["计划类型"].isin(["AARRPlan", "常规Plan"])].copy()
 
-    # 构造完整 7 天
+    # 构造完整区间日期序列
+    days_total = max(1, int(days_total))
     all_dates = [(week_start + pd.Timedelta(days=i)).date() for i in range(days_total)]
 
     if df_op.empty:
@@ -110,7 +112,8 @@ def _build_aarr_figure(df: pd.DataFrame, week_start: pd.Timestamp, target: int, 
     return fig
 
 
-def render(df: pd.DataFrame, target_daily: int, week_start: pd.Timestamp = None) -> go.Figure:
+def render(df: pd.DataFrame, target_daily: int, week_start: pd.Timestamp = None,
+           days_total: int = 7) -> go.Figure:
     """渲染 Section 3（"目标拆解" 子标题，灰字极简）"""
     st.html(f"""
 <div style="font-size:14px;font-weight:600;color:#6B6B6B;
@@ -120,7 +123,7 @@ def render(df: pd.DataFrame, target_daily: int, week_start: pd.Timestamp = None)
 """)
 
     # 计算日累计
-    fig = _build_aarr_figure(df, week_start, int(target_daily))
+    fig = _build_aarr_figure(df, week_start, int(target_daily), days_total=days_total)
     if not fig.data:
         st.info("暂无 Operational 数据（AARRPlan / 常规Plan）")
         return fig

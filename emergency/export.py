@@ -163,6 +163,8 @@ def build_export_html(
     fig4,
     period_str: str = "",
     day_notes: dict | None = None,
+    days_total: int = 7,
+    is_natural_week: bool = True,
 ) -> str:
     """
     构建完整可导出的 HTML 字符串。
@@ -180,9 +182,10 @@ def build_export_html(
     import pandas as pd
     week_start_ts = pd.Timestamp(week_start) if not isinstance(week_start, pd.Timestamp) else week_start
 
-    topbar_html = render_topbar_html(period_str)
+    topbar_html = render_topbar_html(period_str, is_natural_week=is_natural_week)
     s1_html = render_s1(df, target_daily, daily_clicks, week_start_ts,
-                          actual_daily, completion, notes=day_notes)
+                          actual_daily, completion, notes=day_notes,
+                          days_total=days_total)
     s2_html = render_s2(df, target_daily, daily_clicks, gap_pct, completion,
                           actual_daily, hit_days, days_elapsed, days_remaining,
                           need_daily, status, fig2)

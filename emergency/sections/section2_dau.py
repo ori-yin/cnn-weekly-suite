@@ -28,6 +28,7 @@ def render(
     need_daily: int,
     status: str,
     week_start: pd.Timestamp = None,
+    days_total: int = 7,
 ) -> go.Figure:
     """
     渲染 Section 2。
@@ -71,14 +72,16 @@ def render(
     st.html(kpi_row(cards))
 
     # ─── 每日 DAU 趋势图（无副标题） ───
-    fig = _build_daily_figure(daily_clicks, target_daily, week_start=week_start)
+    fig = _build_daily_figure(daily_clicks, target_daily, week_start=week_start,
+                              days_total=days_total)
     st.plotly_chart(fig, use_container_width=True)
 
     return fig
 
 
-def _build_daily_figure(daily_clicks: dict, target: int, week_start: pd.Timestamp = None, days_total: int = 7) -> go.Figure:
-    """构建每日 DAU 柱状图，固定 7 天 X 轴，没数据的天 = 0（占位空柱）"""
+def _build_daily_figure(daily_clicks: dict, target: int, week_start: pd.Timestamp = None,
+                        days_total: int = 7) -> go.Figure:
+    """构建每日 DAU 柱状图，固定区间天数 X 轴，没数据的天 = 0（占位空柱）"""
     if week_start is None:
         # fallback：从 daily_clicks 推断起始日
         if daily_clicks:
@@ -86,7 +89,8 @@ def _build_daily_figure(daily_clicks: dict, target: int, week_start: pd.Timestam
         else:
             week_start = pd.Timestamp.today().normalize()
 
-    # 构造完整的 7 天日期序列
+    # 构造完整的区间日期序列
+    days_total = max(1, int(days_total))
     all_dates = [(week_start + pd.Timedelta(days=i)).date() for i in range(days_total)]
     x = all_dates
     y = [int(daily_clicks.get(d, 0) or 0) for d in all_dates]

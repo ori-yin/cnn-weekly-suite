@@ -1,6 +1,6 @@
 """
 components/day_table.py - 天数表
-显示：周一~周日（7天）已过 N / 剩余 N / 达标 M/N
+显示：区间内每一天已过 N / 剩余 N / 达标 M/N（天数随所选区间自适应）
 """
 import pandas as pd
 from datetime import timedelta
@@ -12,9 +12,10 @@ def render_day_table_html(
     daily_clicks: dict,  # {date: clicks}
     target: int,
     notes: dict | None = None,  # {date_str: note_text}
+    days_total: int = 7,  # 区间天数（非自然周时可为任意 N）
 ) -> str:
-    """渲染 7 天表格 HTML（周一到周日）"""
-    week_end = week_start + timedelta(days=6)
+    """渲染区间天数表 HTML（星期按实际日期赋标，支持非自然周）"""
+    days_total = max(1, int(days_total))
     days_zh = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
 
     today = pd.Timestamp.today().normalize()
@@ -24,7 +25,7 @@ def render_day_table_html(
     notes = notes or {}
 
     rows = []
-    for i in range(7):
+    for i in range(days_total):
         d = week_start + timedelta(days=i)
         d_date = d.date()
         d_str = d_date.strftime("%Y-%m-%d")
@@ -36,7 +37,7 @@ def render_day_table_html(
             if is_hit:
                 hit += 1
         rows.append({
-            "dow": days_zh[i],
+            "dow": days_zh[d.weekday()],
             "date": d_date,
             "d_str": d_str,
             "clicks": clicks,
@@ -46,12 +47,12 @@ def render_day_table_html(
             "note": (notes.get(d_str) or "").strip(),
         })
 
-    remaining = 7 - elapsed
+    remaining = days_total - elapsed
     need_target = target  # 警示
     # 剩余需日均补足
     if remaining > 0 and target > 0:
         total_actual = sum(r["clicks"] for r in rows if r["is_elapsed"])
-        need_daily = max(0, (target * 7 - total_actual) / remaining)
+        need_daily = max(0, (target * days_total - total_actual) / remaining)
     else:
         need_daily = 0
 
@@ -98,7 +99,7 @@ def render_day_table_html(
             box-shadow:0 1px 3px rgba(120,90,30,.06);height:400px;box-sizing:border-box;
             display:flex;flex-direction:column;">
   <div style="padding:14px 16px;border-bottom:1px solid #E0E0E0;display:flex;justify-content:space-between;align-items:center;">
-    <div style="font-size:11px;font-weight:600;color:#888888;letter-spacing:.08em;text-transform:uppercase;">周维度进度</div>
+    <div style="font-size:11px;font-weight:600;color:#888888;letter-spacing:.08em;text-transform:uppercase;">区间进度</div>
     <div style="font-size:11.5px;color:#6B6B6B;">
       已过 <b style="color:#00A04A;">{elapsed}</b> / 剩余 <b style="color:#FF9500;">{remaining}</b> 天 ·
       达标 <b style="color:#DB0005;">{hit}/{elapsed}</b>
@@ -126,14 +127,15 @@ def render_day_table_html(
     </table>
   </div>
   <div style="padding:10px 16px;font-size:11.5px;color:#6B6B6B;border-top:1px solid #E0E0E0;background:#F5F5F5;">
-    剩余 {remaining} 天需日均 <b style="color:#DB0005;font-weight:800;">{need_daily:,.0f}</b> 才能完成周目标 {target * 7:,.0f}
+    剩余 {remaining} 天需日均 <b style="color:#DB0005;font-weight:800;">{need_daily:,.0f}</b> 才能完成区间目标 {target * days_total:,.0f}
   </div>
 </div>
 """
     return table_html
 
 
-def render_day_table_editable(week_start, daily_clicks, target, notes: dict | None = None) -> None:
+def render_day_table_editable(week_start, daily_clicks, target, notes: dict | None = None,
+                               days_total: int = 7) -> None:
     """Streamlit 版：st.data_editor 表格，备注列可原地编辑（其他列 disabled）
 
     编辑后自动同步到 session_state[f"note_{YYYY-MM-DD}"]，供下载 HTML 复用
@@ -149,7 +151,8 @@ def render_day_table_editable(week_start, daily_clicks, target, notes: dict | No
     elapsed = 0
     hit = 0
     total_actual = 0
-    for i in range(7):
+    days_total = max(1, int(days_total))
+    for i in range(days_total):
         d = week_start + timedelta(days=i)
         d_date = d.date()
         clicks = int(daily_clicks.get(d_date, 0) or 0)
@@ -161,15 +164,15 @@ def render_day_table_editable(week_start, daily_clicks, target, notes: dict | No
             if is_hit:
                 hit += 1
 
-    remaining = 7 - elapsed
+    remaining = days_total - elapsed
     if remaining > 0 and target > 0:
-        need_daily = max(0, (target * 7 - total_actual) / remaining)
+        need_daily = max(0, (target * days_total - total_actual) / remaining)
     else:
         need_daily = 0
 
     # 编辑器数据
     rows = []
-    for i in range(7):
+    for i in range(days_total):
         d = week_start + timedelta(days=i)
         d_date = d.date()
         d_str = d_date.strftime("%Y-%m-%d")
@@ -185,7 +188,7 @@ def render_day_table_editable(week_start, daily_clicks, target, notes: dict | No
             status = "—"
 
         rows.append({
-            "星期": days_zh[i],
+            "星期": days_zh[d.weekday()],
             "日期": d_date.strftime("%m-%d"),
             "DAU": f"{clicks:,.0f}" if is_elapsed else "—",
             "状态": status,
@@ -198,7 +201,7 @@ def render_day_table_editable(week_start, daily_clicks, target, notes: dict | No
     with st.container(border=True):
         st.html(f"""
 <div style="padding:12px 16px;border-bottom:1px solid #E0E0E0;display:flex;justify-content:space-between;align-items:center;">
-  <div style="font-size:11px;font-weight:600;color:#888888;letter-spacing:.08em;text-transform:uppercase;">周维度进度</div>
+  <div style="font-size:11px;font-weight:600;color:#888888;letter-spacing:.08em;text-transform:uppercase;">区间进度</div>
   <div style="font-size:11.5px;color:#6B6B6B;">
     已过 <b style="color:#00A04A;">{elapsed}</b> / 剩余 <b style="color:#FF9500;">{remaining}</b> 天 ·
     达标 <b style="color:#DB0005;">{hit}/{elapsed}</b>
@@ -216,7 +219,7 @@ def render_day_table_editable(week_start, daily_clicks, target, notes: dict | No
             },
             hide_index=True,
             use_container_width=True,
-            key="day_notes_editor",
+            key=f"day_notes_editor_{pd.Timestamp(week_start):%Y%m%d}_{days_total}",
             height=280,
         )
         # 同步到 session_state，下载 HTML 时从这里取
@@ -226,6 +229,6 @@ def render_day_table_editable(week_start, daily_clicks, target, notes: dict | No
             st.session_state[f"note_{d_str}"] = row["备注"]
         st.html(f"""
 <div style="padding:8px 16px;font-size:11.5px;color:#6B6B6B;border-top:1px solid #E0E0E0;background:#F5F5F5;">
-  剩余 {remaining} 天需日均 <b style="color:#DB0005;font-weight:800;">{need_daily:,.0f}</b> 才能完成周目标 {target * 7:,.0f}
+  剩余 {remaining} 天需日均 <b style="color:#DB0005;font-weight:800;">{need_daily:,.0f}</b> 才能完成区间目标 {target * days_total:,.0f}
 </div>
 """)
