@@ -86,6 +86,9 @@ def render(df: pd.DataFrame, target: int, dau_df: pd.DataFrame = None):
     fig = go.Figure()
 
     # DAU 折线
+    # category 轴不接受 tickformat，必须预先把日期格式化成字符串当刻度值
+    x_tick = [pd.Timestamp(d).strftime("%m/%d\n%a") for d in daily["日期"]]
+
     fig.add_trace(go.Scatter(
         x=daily["日期"],
         y=daily["DAU"],
@@ -119,7 +122,15 @@ def render(df: pd.DataFrame, target: int, dau_df: pd.DataFrame = None):
         margin=dict(l=60, r=20, t=30, b=40),
         plot_bgcolor=THEME_BG,
         paper_bgcolor=THEME_BG,
-        xaxis=dict(title="", gridcolor="#E8E8E8", tickformat="%m/%d\n%a"),
+        # type="category" 必须显式指定：x 是 datetime.date 对象，Plotly 会推断成
+        # 连续日期轴，跨度仅 3-4 天时自动选 12 小时粒度，一天画出两个刻度，
+        # 而 tickformat 只到「日」，于是同一日期标签重复出现（10/08,10/08,...）。
+        # 强制 category 轴后按数据点顺序渲染，一天一个刻度。
+        # 注意 category 轴不认 tickformat：tickvals 必须是类别值本身（即原始日期），
+        # 格式化后的字符串放 ticktext。写成 tickvals=x_tick 会匹配不到任何类别，
+        # 结果整个 X 轴标签消失。
+        xaxis=dict(title="", type="category", gridcolor="#E8E8E8",
+                   tickmode="array", tickvals=list(daily["日期"]), ticktext=x_tick),
         yaxis=dict(title="DAU", gridcolor="#E8E8E8", tickformat=","),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=11)),
         font=dict(family="'Microsoft YaHei', 'PingFang SC', -apple-system, sans-serif"),
